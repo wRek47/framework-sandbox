@@ -1,10 +1,10 @@
 <?php // path: bootstrap/docs/index.php
 
 if (!class_exists("Documentation")): $files = [
-    "framework/bootstrap/docs/classes/documentation.php"
+    "framework/bootstrap/docs/framework/classes/documentation.php"
 ]; include INDEX; endif;
 
-$docs = new Documentation("1.0", "database/bootstrap/docs/");
+$docs = new Documentation("1.0", "common/database/cms/docs/home/database/");
 
 set_page(3, $docs->pages, "home/docs/cover");
 $docs->page = $_PAGE['homeDocs'];

@@ -1,0 +1,14 @@
+[ {
+    "id": 1,
+    "subversion": 1,
+    "created": "",
+    "folder": "framework/bootstrap/docs/versions/1/",
+
+    "authors": "common/database/cms/docs/home/database/authors.json",
+    "contributors": "common/database/cms/docs/home/database/contributors.json",
+    "chapters": "common/database/cms/docs/home/database/chapters.md",
+    "contents": "common/database/cms/docs/home/database/contents.json",
+    "glossary": "common/database/cms/docs/home/database/glossary.md",
+    "citations": "common/database/cms/docs/home/database/citations.md",
+    "references": "common/database/cms/docs/home/database/references.md"
+} ]

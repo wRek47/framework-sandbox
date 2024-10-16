@@ -57,9 +57,9 @@ elseif (isset($files)):
 else: // start program
 
 	$files = [
-		"framework/index.php",
-		"framework/bootstrap.php",
-		"framework/cms.php"
+		"framework/realms/index.php",
+		"framework/relays/bootstrap.php",
+		"framework/realms/cms.php"
 	];
 	
 	include INDEX;

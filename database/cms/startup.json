@@ -1,9 +1,0 @@
-{
-    "configured": false,
-    "file": "cms/index.php",
-
-    "versions": "database/cms/versions.json",
-    "pages": "database/cms/pages.json",
-
-    "version": 1
-}

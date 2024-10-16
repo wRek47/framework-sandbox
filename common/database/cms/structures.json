@@ -1,0 +1,23 @@
+[ {
+    "type": "card",
+    "className": "BootstrapCard",
+    "nbt": { "class": "card rounded-0", "inner": [ {
+        "type": "cardHeader"
+    }, {
+        "type": "cardBody"
+    }, {
+        "type": "cardFooter"
+    } ] }
+}, {
+    "type": "cardHeader",
+    "className": "BootstrapCardHeader",
+    "nbt": { "class": "card-header" }
+}, {
+    "type": "cardBody",
+    "className": "BootstrapCardBody",
+    "nbt": { "class": "card-body" }
+}, {
+    "type": "cardFooter",
+    "className": "BootstrapCardFooter",
+    "nbt": { "class": "card-footer" }
+} ]
