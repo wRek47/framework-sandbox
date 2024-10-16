@@ -1,0 +1,25 @@
+[ {
+	"crumb": "home/docs/cover",
+	"crumbText": "Cover Page",
+    "folder": "framework/bootstrap/docs/versions/1/pages/cover/"
+}, {
+    "crumb": "home/docs/authors",
+    "crumbText": "Authors",
+    "folder": "framework/bootstrap/docs/versions/1/pages/authors/"
+}, {
+    "crumb": "home/docs/chapters",
+    "crumbText": "Chapters",
+    "folder": "framework/bootstrap/docs/versions/1/pages/chapters/"
+}, {
+	"crumb": "home/docs/glossary",
+	"crumbText": "Glossary",
+    "folder": "framework/bootstrap/docs/versions/1/pages/glossary/"
+}, {
+	"crumb": "home/docs/citations",
+	"crumbText": "Citations",
+    "folder": "framework/bootstrap/docs/versions/1/pages/citations/"
+}, {
+	"crumb": "home/docs/references",
+	"crumbText": "References",
+    "folder": "framework/bootstrap/docs/versions/1/pages/references/"
+} ]

@@ -1,0 +1,13 @@
+[ {
+    "id": 1,
+    "chapter_id": "1",
+    "file": "/database/bootstrap/docs/chapters/1/introduction.md"
+}, {
+    "id": 2,
+    "chapter_id": "1.1",
+    "file": "/database/bootstrap/docs/chapters/1/overview.md"
+}, {
+    "id": 3,
+    "chapter_id": "1.2",
+    "file": "/database/bootstrap/docs/chapters/1/goals.md"
+} ]
