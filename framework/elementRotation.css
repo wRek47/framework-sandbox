@@ -1,0 +1,114 @@
+.face {
+    box-shadow: 1px 3px 10px silver;
+    height: 100%;
+    width: 100%;
+    /* background-color: transparent;
+    background-color: #f8f9fa; */
+    background-color: white;
+    border: 1px solid #ced4da;
+    overflow: auto;
+}
+
+.back, .left, .right, .top, .bottom {
+    position: absolute;
+
+    top: 0px;
+    left: 0px;
+    right: 0px;
+    bottom: 0px;
+}
+
+.coin, .cube10, .cube20, .cube30, .cube40, .cube50, .cube60, .cube70, .cube80 {
+    position: relative;
+    transform-style: preserve-3d;
+}
+
+.cube20 { width: 40vmin; }
+.cube30 { width: 60vmin; }
+.cube40 { width: 80vmin; }
+.cube50 { width: 100vmin; }
+.cube60 { width: 120vmin; }
+.cube70 { width: 140vmin; }
+.cube80 { width: 160vmin; }
+
+.coin:is(.no-shadow) > .face { box-shadow: none; }
+.cube10:is(.no-shadow) > .face { box-shadow: none; }
+.cube20:is(.no-shadow) > .face { box-shadow: none; }
+.cube30:is(.no-shadow) > .face { box-shadow: none; }
+.cube40:is(.no-shadow) > .face { box-shadow: none; }
+.cube50:is(.no-shadow) > .face { box-shadow: none; }
+.cube60:is(.no-shadow) > .face { box-shadow: none; }
+.cube70:is(.no-shadow) > .face { box-shadow: none; }
+.cube80:is(.no-shadow) > .face { box-shadow: none; }
+
+.coin:is(.portrait) > .face { min-height: 60vmin; }
+.cube20:is(.portrait) > .face { min-height: 60vmin; }
+.cube30:is(.portrait) > .face { min-height: 60vmin; }
+.cube40:is(.portrait) > .face { min-height: 60vmin; }
+.cube50:is(.portrait) > .face { min-height: 60vmin; }
+.cube60:is(.portrait) > .face { min-height: 60vmin; }
+.cube70:is(.portrait) > .face { min-height: 60vmin; }
+.cube80:is(.portrait) > .face { min-height: 60vmin; }
+
+.coin > .front { transform: translateZ(0.1vmin); }
+.coin > .back { transform: rotateY(180deg) translateZ(0.1vmin); }
+.coin > .left { transform: rotateY(90deg) translateZ(0.1vmin); }
+.coin > .right { transform: rotateY(-90deg) translateZ(0.1vmin); }
+.coin > .top { transform: rotateX(90deg) translateZ(0.1vmin); }
+.coin > .bottom { transform: rotateX(-90deg) translateZ(0.1vmin); }
+
+.cube10 > .front { transform: translateZ(10vmin); }
+.cube10 > .back { transform: rotateY(180deg) translateZ(10vmin); }
+.cube10 > .left { transform: rotateY(90deg) translateZ(10vmin); }
+.cube10 > .right { transform: rotateY(-90deg) translateZ(10vmin); }
+.cube10 > .top { transform: rotateX(90deg) translateZ(10vmin); }
+.cube10 > .bottom { transform: rotateX(-90deg) translateZ(10vmin); }
+
+.cube20 > .front { transform: translateZ(20vmin); }
+.cube20 > .back { transform: rotateY(180deg) translateZ(20vmin); }
+.cube20 > .left { transform: rotateY(90deg) translateZ(20vmin); }
+.cube20 > .right { transform: rotateY(-90deg) translateZ(20vmin); }
+.cube20 > .top { transform: rotateX(90deg) translateZ(20vmin); }
+.cube20 > .bottom { transform: rotateX(-90deg) translateZ(20vmin); }
+
+.cube30 > .front { transform: translateZ(30vmin); }
+.cube30 > .back { transform: rotateY(180deg) translateZ(30vmin); }
+.cube30 > .left { transform: rotateY(90deg) translateZ(30vmin); }
+.cube30 > .right { transform: rotateY(-90deg) translateZ(30vmin); }
+.cube30 > .top { transform: rotateX(90deg) translateZ(30vmin); }
+.cube30 > .bottom { transform: rotateX(-90deg) translateZ(30vmin); }
+
+.cube40 > .front { transform: translateZ(40vmin); }
+.cube40 > .back { transform: rotateY(180deg) translateZ(40vmin); }
+.cube40 > .left { transform: rotateY(90deg) translateZ(40vmin); }
+.cube40 > .right { transform: rotateY(-90deg) translateZ(40vmin); }
+.cube40 > .top { transform: rotateX(90deg) translateZ(40vmin); }
+.cube40 > .bottom { transform: rotateX(-90deg) translateZ(40vmin); }
+
+.cube50 > .front { transform: translateZ(50vmin); }
+.cube50 > .back { transform: rotateY(180deg) translateZ(50vmin); }
+.cube50 > .left { transform: rotateY(90deg) translateZ(50vmin); }
+.cube50 > .right { transform: rotateY(-90deg) translateZ(50vmin); }
+.cube50 > .top { transform: rotateX(90deg) translateZ(50vmin); }
+.cube50 > .bottom { transform: rotateX(-90deg) translateZ(50vmin); }
+
+.cube60 > .front { transform: translateZ(60vmin); }
+.cube60 > .back { transform: rotateY(180deg) translateZ(60vmin); }
+.cube60 > .left { transform: rotateY(90deg) translateZ(60vmin); }
+.cube60 > .right { transform: rotateY(-90deg) translateZ(60vmin); }
+.cube60 > .top { transform: rotateX(90deg) translateZ(60vmin); }
+.cube60 > .bottom { transform: rotateX(-90deg) translateZ(60vmin); }
+
+.cube70 > .front { transform: translateZ(70vmin); }
+.cube70 > .back { transform: rotateY(180deg) translateZ(70vmin); }
+.cube70 > .left { transform: rotateY(90deg) translateZ(70vmin); }
+.cube70 > .right { transform: rotateY(-90deg) translateZ(70vmin); }
+.cube70 > .top { transform: rotateX(90deg) translateZ(70vmin); }
+.cube70 > .bottom { transform: rotateX(-90deg) translateZ(70vmin); }
+
+.cube80 > .front { transform: translateZ(80vmin); }
+.cube80 > .back { transform: rotateY(180deg) translateZ(80vmin); }
+.cube80 > .left { transform: rotateY(90deg) translateZ(80vmin); }
+.cube80 > .right { transform: rotateY(-90deg) translateZ(80vmin); }
+.cube80 > .top { transform: rotateX(90deg) translateZ(80vmin); }
+.cube80 > .bottom { transform: rotateX(-90deg) translateZ(80vmin); }
