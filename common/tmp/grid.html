@@ -369,7 +369,7 @@
              * @param {Sheet} sheet - The current sheet context.
              * @param {string} content - The semantic content or formula.
              * @math Arithmetic/Algebra: Addition, Subtraction, Multiplication, Division, Substitution.
-             */
+             
             evaluate(sheet, content) {
                 if (content.startsWith('=')) {
                     let formula = content.substring(1);
@@ -399,4 +399,1099 @@
                     }
                 } else {
                     const numValue = parseFloat(content);
-                    this.value = isNa
+                    this.value = isNaN(numValue) ? content : numValue;
+                }
+            }
+            
+            saveState(sheet) {
+                if (sheet && sheet.app) {
+                    sheet.app.saveState();
+                }
+            }
+
+            // ... (toSerializable/fromSerializable remain the same structure for Firestore stability)
+            toSerializable() {
+                return {
+                    l: this.l,
+                    w: this.w,
+                    focusNodeIndex: this.focusNodeIndex === undefined ? -1 : this.focusNodeIndex,
+                    isPalindromic: this.isPalindromic, // Save the pattern status
+                    nodes: this.nodes.map(node => ({
+                        label: node.label || '', 
+                        content: node.content || '', 
+                        x: node.x,
+                        y: node.y,
+                        z: node.z,
+                        hasSubSheet: node.hasSubSheet,
+                        subSheet: node.hasSubSheet && node.subSheet ? node.subSheet.toSerializable() : null
+                    }))
+                };
+            }
+
+            static fromSerializable(data, app) {
+                const cell = new Cell(data.l, data.w);
+                cell.focusNodeIndex = data.focusNodeIndex === undefined ? -1 : data.focusNodeIndex; 
+                cell.isPalindromic = data.isPalindromic || false;
+                
+                cell.nodes = (data.nodes || []).map(nodeData => {
+                    const node = {
+                        label: nodeData.label || '', 
+                        content: nodeData.content || '', 
+                        x: nodeData.x,
+                        y: nodeData.y,
+                        z: nodeData.z,
+                        subSheet: nodeData.subSheet ? Sheet.fromSerializable(nodeData.subSheet, app) : null
+                    };
+                    node.hasSubSheet = !!node.subSheet; 
+                    return node;
+                });
+                
+                cell.updateFromNode({app:app}); 
+                return cell;
+            }
+            
+            sortNodesByLabel() {
+                this.nodes.sort((a, b) => {
+                    const labelA = a.label.toUpperCase();
+                    const labelB = b.label.toUpperCase();
+                    if (labelA < labelB) return -1;
+                    if (labelA > labelB) return 1;
+                    return a.z - b.z || a.y - b.y || a.x - b.x; 
+                });
+                this.focusNodeIndex = 0; 
+            }
+        }
+
+        /**
+         * Class representing an Excel sheet (the L/W plane).
+         */
+        class Sheet {
+            constructor(app, type = 'Grid') {
+                this.app = app;
+                this.focusL = 0; 
+                this.focusW = 0; 
+                this.type = type; 
+                this.grid = []; 
+                this.ensureCell(0, 0); 
+            }
+            
+            ensureCell(l, w) {
+                if (!this.grid[w]) {
+                    this.grid[w] = [];
+                }
+                if (!this.grid[w][l]) {
+                    this.grid[w][l] = new Cell(l, w);
+                }
+                return this.grid[w][l];
+            }
+
+            getCell(l, w) {
+                return this.grid[w] ? this.grid[w][l] : null;
+            }
+
+            recalculate() {
+                // Ensure correct palindrome status is reflected after recalc
+                // this.app.setPalindromeStatus(false); 
+                
+                for (const w in this.grid) {
+                    for (const l in this.grid[w]) {
+                        const cell = this.grid[w][l];
+                        cell.ensureFocus(this);
+                        if (cell.getCurrentNode()) {
+                             cell.updateFromNode(this); // This includes the palindrome check
+                            const focusedNode = cell.getCurrentNode();
+                            if (focusedNode && focusedNode.hasSubSheet) {
+                                focusedNode.subSheet.recalculate(); 
+                            }
+                        }
+                    }
+                }
+            }
+            
+            sortCellsByLabel() {
+                // ... (rest of sortCellsByLabel logic is unchanged)
+                if (this.type !== 'List') {
+                    console.log("Cell sorting is only implemented for List (Index/I) type for stability.");
+                    return;
+                }
+                
+                const currentCells = Object.values(this.grid).flatMap(row => Object.values(row));
+                currentCells.sort((a, b) => {
+                    const labelA = (a.getCurrentNode()?.label || 'Zz').toUpperCase();
+                    const labelB = (b.getCurrentNode()?.label || 'Zz').toUpperCase();
+                    if (labelA < labelB) return -1;
+                    if (labelA > labelB) return 1;
+                    return a.w - b.w;
+                });
+                
+                const newGrid = {};
+                currentCells.forEach((cell, index) => {
+                    const newW = index; 
+                    cell.w = newW;
+                    cell.l = 0; 
+                    if (!newGrid[newW]) {
+                        newGrid[newW] = [];
+                    }
+                    newGrid[newW][0] = cell;
+                });
+                
+                this.grid = newGrid;
+                this.focusL = 0;
+                this.focusW = 0;
+            }
+
+
+            toSerializable() {
+                const serializableGrid = [];
+                for (const w in this.grid) {
+                    serializableGrid[w] = [];
+                    for (const l in this.grid[w]) {
+                        serializableGrid[w][l] = this.grid[w][l].toSerializable();
+                    }
+                }
+                return {
+                    focusL: this.focusL,
+                    focusW: this.focusW,
+                    type: this.type,
+                    grid: serializableGrid
+                };
+            }
+
+            static fromSerializable(data, app) {
+                const sheet = new Sheet(app, data.type || 'Grid');
+                sheet.focusL = data.focusL || 0;
+                sheet.focusW = data.focusW || 0;
+                
+                sheet.grid = [];
+                for (const w in data.grid) {
+                    sheet.grid[w] = [];
+                    for (const l in data.grid[w]) {
+                        const cellData = data.grid[w][l];
+                        sheet.grid[w][l] = Cell.fromSerializable(cellData, app);
+                    }
+                }
+                return sheet;
+            }
+        }
+
+        /**
+         * Main Application Class managing the Z-stack, navigation, and persistence.
+         */
+        class ExcelZApp {
+            constructor() {
+                this.sheetStack = []; 
+                this.pathHistory = []; 
+                this.navigationMode = 'global'; 
+                this.currentViewMode = 'Maximized'; // Replaced 'Centered' with 'Maximized'
+                this.sheetTypes = ['Grid', 'List']; // Removed 'Axiomatic'
+                this.stepSize = 1; 
+                this.isRecording = false; 
+                this.recordedPath = []; 
+                this.startFocusL = 0; 
+                this.startFocusW = 0; 
+                this.isPalindromeStatus = false; 
+
+                // DOM Elements
+                this.sheetDisplay = document.getElementById('sheet-display-area');
+                this.labelInput = document.getElementById('label-input'); 
+                this.contentInput = document.getElementById('content-input'); 
+                this.currentDepthEl = document.getElementById('current-depth');
+                this.currentCoordsEl = document.getElementById('current-coords');
+                this.currentNodeCoordsEl = document.getElementById('current-node-coords'); 
+                this.currentNodeValueEl = document.getElementById('current-node-value');
+                this.currentSheetTypeEl = document.getElementById('current-sheet-type');
+                this.userIdDisplayEl = document.getElementById('current-cell-id'); 
+                this.palindromeStatusEl = document.getElementById('palindrome-status'); 
+                this.navToggleBtn = document.getElementById('nav-toggle-btn');
+                this.viewToggleBtn = document.getElementById('view-toggle-btn');
+                this.typeToggleBtn = document.getElementById('type-toggle-btn');
+                this.sortBtn = document.getElementById('sort-btn'); 
+                this.navN = document.getElementById('nav-n');
+                this.navS = document.getElementById('nav-s');
+                this.navE = document.getElementById('nav-e');
+                this.navW = document.getElementById('nav-w');
+                this.navNE = document.getElementById('nav-ne');
+                this.navSE = document.getElementById('nav-se');
+                this.navSW = document.getElementById('nav-sw');
+                this.navNW = document.getElementById('nav-nw');
+                this.navEnter = document.getElementById('nav-enter');
+                this.navExit = document.getElementById('nav-exit');
+                this.stepSizeInput = document.getElementById('step-size-input'); 
+                this.recordBtn = document.getElementById('record-btn'); 
+                this.runBtn = document.getElementById('run-btn'); 
+                this.recordingStatusEl = document.getElementById('recording-status'); 
+                this.pathLengthEl = document.getElementById('path-length'); 
+
+                this.stepSizeInput.addEventListener('change', (e) => {
+                    const value = parseInt(e.target.value);
+                    this.stepSize = isNaN(value) || value < 1 ? 1 : value;
+                    e.target.value = this.stepSize; 
+                    this.render(); 
+                });
+
+                // FIX: Initialize with a blank sheet and render immediately
+                let initialSheet = new Sheet(this);
+                // alert(localStorage.getItem("excelZSheet"));
+                // initialSheet = JSON.parse(localStorage.getItem("excelZSheet"));
+                
+                this.sheetStack = [initialSheet];
+                this.render(); // First render: show the empty grid right away
+
+                if (firebaseConfig.apiKey) {
+                    this.dbApp = initializeApp(firebaseConfig);
+                    this.db = getFirestore(this.dbApp);
+                    this.auth = getAuth(this.dbApp);
+                    setLogLevel('Debug');
+                    this.initAuth();
+                } else {
+                    // Fallback to immediate load if no Firebase config
+                    this.loadState();
+                }
+
+                this.contentInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { 
+                        e.preventDefault();
+                        this.editCell();
+                    }
+                });
+            }
+
+            // Set the Palindrome status in the UI
+            setPalindromeStatus(isPalindrome) {
+                if (isPalindrome) {
+                    this.palindromeStatusEl.classList.remove('d-none');
+                } else {
+                    this.palindromeStatusEl.classList.add('d-none');
+                }
+                this.isPalindromeStatus = isPalindrome;
+            }
+
+            async initAuth() {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(this.auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(this.auth);
+                    }
+                } catch (error) {
+                    console.error("Firebase Auth Error:", error);
+                    await signInAnonymously(this.auth);
+                }
+
+                onAuthStateChanged(this.auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        this.userIdDisplayEl.textContent = `User ID: ${userId.substring(0, 8)}...`;
+                        this.loadState(); 
+                        this.setupSnapshotListener();
+                    } 
+                });
+            }
+
+            // --- Persistence (Firestore/LocalStorage) ---
+            
+            getMockupData() {
+                // ... (Mockup data generation remains the same, but with one palindromic example)
+                const generateCellData = (l, w, label, content, subSheet = null, nodes = null, x = 0, y = 0, z = 0) => ({
+                    l, w, focusNodeIndex: 0,
+                    nodes: nodes || [{
+                        label: label,
+                        content: content,
+                        x: x, y: y, z: z,
+                        hasSubSheet: !!subSheet,
+                        subSheet: subSheet
+                    }]
+                });
+                
+                const generateSheetData = (l, w, type = 'Grid', grid = []) => ({
+                    focusL: l, focusW: w,
+                    type: type, grid: grid
+                });
+
+                // 4. Calendar (Grid) - L=Day, W=Week
+                const calendarSubSheet = generateSheetData(0, 1, 'Grid', [
+                    [
+                        generateCellData(0, 0, 'Mon', 'Monday'),
+                        generateCellData(1, 0, 'Tue', 'Tuesday'),
+                        generateCellData(2, 0, 'Wed', 'Wednesday'),
+                        generateCellData(3, 0, 'Thu', 'Thursday'),
+                        generateCellData(4, 0, 'Fri', 'Friday'),
+                    ],
+                    [
+                        generateCellData(0, 1, '1st', 'Team Standup'),
+                        generateCellData(1, 1, '2nd', 'Project Alpha Review'),
+                        generateCellData(4, 1, '5th', 'WPF Release'),
+                    ],
+                ]);
+
+                // 2. Project Budget (Level 2: Grid) - Demonstrates L/W Formula Referencing
+                const budgetSubSheet = {
+                    focusL: 0, focusW: 1, type: 'Grid',
+                    grid: [
+                        [
+                            generateCellData(0, 0, 'Field', 'Cost Category'),
+                            generateCellData(1, 0, 'Amount', 'Amount ($)'),
+                            generateCellData(2, 0, 'Formula', 'Calculation'),
+                        ],
+                        [
+                            generateCellData(0, 1, 'Dev Cost', 'Development Team Salary'),
+                            generateCellData(1, 1, '100000', '100000'), // Cell B2
+                            generateCellData(2, 1, 'Quarter Total', 'B2+B3'), // Formula for Cell C2
+                        ],
+                        [
+                            generateCellData(0, 2, 'Mkt Cost', 'Marketing Campaign Budget'),
+                            generateCellData(1, 2, '50000', '50000'), // Cell B3
+                            generateCellData(2, 2, '=B2+B3', ''), // Cell B3
+                        ]
+                    ]
+                };
+
+                // 4. Calendar (Grid) - L=Day, W=Week
+                const resumeCalendarSubSheet = generateSheetData(0, 0, 'Grid', [
+                    [
+                        generateCellData(0, 0, 'Mon', 'Monday'),
+                        generateCellData(1, 0, 'Tue', 'Tuesday'),
+                        generateCellData(2, 0, 'Wed', 'Wednesday'),
+                        generateCellData(3, 0, 'Thu', 'Thursday'),
+                        generateCellData(4, 0, 'Fri', 'Friday'),
+                    ],
+                    [
+                        generateCellData(3, 1, '', 'Event Label'),
+                        generateCellData(3, 1, '', 'Event Label'),
+                        generateCellData(3, 1, '1st', 'Event Label'),
+                    ],
+                    [
+                        generateCellData(1, 2, '6th', 'Event Label'),
+                        generateCellData(2, 2, '7th', 'Event Label'),
+                    ],
+                ]);
+
+                // 3. Resume (List) - L=0, W=Index (I)
+                const resumeSubSheet = generateSheetData(0, 0, 'List', [
+                    [ generateCellData(0, 0, 'Headline', 'Senior Software Engineer specializing in distributed systems.') ],
+                    [ generateCellData(0, 1, 'Experience: Lead Dev', 'Managed a team of 5, increased backend API throughput by 30%.') ],
+                    [ generateCellData(0, 2, 'Experience: Junior Dev', 'Focused on front-end component design and optimization.') ],
+                    [ generateCellData(0, 3, 'Education: MS CompSci', 'Thesis on Neural Network Architectures (4.0 GPA).') ],
+                    [ generateCellData(0, 4, 'Budget', 'Enter the cell to view content.', budgetSubSheet) ],
+                    [ generateCellData(0, 5, 'Calendar', 'Enter the cell to view content.', resumeCalendarSubSheet) ],
+                ]);
+                
+                // 1. Project Hermes Summary (Level 1: Grid) - Links to Level 2
+                const hermesSummarySubSheet = {
+                    focusL: 0, focusW: 0, type: 'Grid',
+                    grid: [
+                        [
+                            generateCellData(0, 0, 'Name', 'Project Field'),
+                            generateCellData(1, 0, 'Value', 'Current Data'),
+                        ],
+                        [
+                            generateCellData(0, 1, 'Budget Sheet', 'Detailed financial breakdown.'),
+                            generateCellData(1, 1, 'View Budget', 'Enter to view budget details.', budgetSubSheet), 
+                        ],
+                        [
+                            generateCellData(0, 2, 'Status', '90% Complete'),
+                            generateCellData(1, 2, 'Timeline', 'Completed Q4 2025'),
+                        ]
+                    ]
+                };
+
+                // 0. Portfolio (Level 0: Axiomatic) - Demonstrates Local X/Y/Z
+                const portfolioSubSheet = {
+                    focusL: 0, focusW: 0, type: 'List',
+                    grid: [
+                        [
+                            { 
+                                l: 0, w: 0, focusNodeIndex: 0,
+                                nodes: [
+                                    { label: 'Project Hermes', content: 'Secure data ledger.', x: 0, y: 0, z: 0, hasSubSheet: true, subSheet: hermesSummarySubSheet },
+                                    { label: 'External API', content: 'Required integration with Third-Party Vendor Z.', x: 1, y: 0, z: 0, hasSubSheet: false, subSheet: null },
+                                    { label: 'Team Lead', content: 'Alice Coder (al-code@org.com)', x: 0, y: 1, z: 0, hasSubSheet: false, subSheet: null },
+                                    { label: 'Risk Assessment', content: 'High vulnerability score, requires further review.', x: 0, y: 0, z: 1, hasSubSheet: false, subSheet: null },
+                                ]
+                            }
+                        ],
+                        [
+                            generateCellData(0, 1, 'Project Icarus', 'High-frequency trading algorithm.', null)
+                        ]
+                    ]
+                };
+                
+                const workspaceSubSheet = generateSheetData(0, 0, 'Grid', [
+                    [
+                        //generateCellData(0, 0, 'Test', 'Testing'),
+                    ]
+                ]);
+
+                // Root Sheet (Grid) - Dashboard
+                const rootSheetData = {
+                    focusL: 0, focusW: 0, type: 'Grid',
+                    grid: [
+                        [
+                            generateCellData(0, 0, 'Portfolio', 'Container for professional portfolio data.', portfolioSubSheet),
+                            generateCellData(1, 0, 'Resume', 'Indexed list of work history and education.', resumeSubSheet),
+                            generateCellData(2, 0, 'Calendar', 'Monthly planning grid.', calendarSubSheet),
+                            generateCellData(3, 0, 'Workspace', 'Container for testing.', workspaceSubSheet),
+                        ]
+                    ]
+                };
+                return rootSheetData;
+            }
+
+
+            getFirestorePath() {
+                return `artifacts/${appId}/users/${userId}/excel_z/main_sheet`;
+            }
+
+            async loadState() {
+                // ... (loading logic remains the same)
+                const localData = localStorage.getItem('excelZSheet');
+                let initialSheetData = this.getMockupData(); 
+                // let initialSheetData = {};
+
+                if (this.db && userId !== 'anonymous') {
+                    try {
+                        const docRef = doc(this.db, this.getFirestorePath());
+                        const docSnap = await getDoc(docRef);
+                        if (docSnap.exists()) { 
+                            initialSheetData = docSnap.data().sheetData; 
+                            console.log("State loaded from Firestore.");
+                        }
+                    } catch (error) { console.error("Error loading state from Firestore:", error); }
+                }
+                
+                if (initialSheetData) {
+                  // alert(initialSheetData.grid[0][0].nodes[0].label);
+                }
+
+                if (!initialSheetData && localData) {
+                  // alert("Found sheet node");
+                    try { 
+                        const parsedData = JSON.parse(localData);
+                        
+                        if (parsedData.grid && Object.keys(parsedData.grid).length > 0) {
+                            
+                            initialSheetData = parsedData;
+                            console.log("State loaded from LocalStorage.");
+                        }
+                    } catch (e) { console.error("Error parsing localStorage data:", e); }
+                }
+
+
+                const mainSheet = Sheet.fromSerializable(initialSheetData, this);
+                this.sheetStack = [mainSheet];
+                this.pathHistory = []; 
+
+                this.getCurrentSheet().recalculate();
+                this.render(); // Second render: populate with loaded data
+            }
+
+            setupSnapshotListener() {
+                // ... (snapshot listener logic remains the same)
+                if (!this.db || userId === 'anonymous') return;
+
+                const docRef = doc(this.db, this.getFirestorePath());
+                onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists() && docSnap.metadata.hasPendingWrites === false) {
+                        const incomingData = docSnap.data().sheetData;
+                        const mainSheet = Sheet.fromSerializable(incomingData, this);
+                        this.sheetStack = [mainSheet]; 
+                        this.pathHistory = []; 
+                        this.getCurrentSheet().recalculate();
+                        this.render();
+                    }
+                }, (error) => {
+                    console.error("Snapshot listener error:", error);
+                });
+            }
+
+            async saveState() {
+                // ... (save state logic remains the same)
+                
+                const mainSheet = this.sheetStack[0];
+                const serializableData = mainSheet.toSerializable();
+
+                localStorage.setItem('excelZSheet', JSON.stringify(serializableData));
+                // alert("Setting");
+
+                if (this.db && userId !== 'anonymous') {
+                    try {
+                        const docRef = doc(this.db, this.getFirestorePath());
+                        await setDoc(docRef, { sheetData: serializableData });
+                    } catch (error) {
+                        console.error("Error saving state to Firestore:", error);
+                    }
+                }
+            }
+
+
+            // --- Core Sheet/Focus Management ---
+
+            getCurrentSheet() {
+                return this.sheetStack[this.sheetStack.length - 1];
+            }
+
+            getCurrentCell() {
+                const sheet = this.getCurrentSheet();
+                const cell = sheet.getCell(sheet.focusL, sheet.focusW);
+                
+                if (cell) {
+                    cell.ensureFocus(sheet); 
+                } else {
+                    const newCell = sheet.ensureCell(sheet.focusL, sheet.focusW);
+                    newCell.ensureFocus(sheet);
+                    return newCell;
+                }
+                return cell;
+            }
+            
+            toggleNavigationMode() {
+                this.navigationMode = this.navigationMode === 'global' ? 'local' : 'global';
+                this.render(); 
+            }
+            
+            toggleViewMode() {
+                this.currentViewMode = this.currentViewMode === 'Centered' ? 'Maximized' : 'Centered';
+                this.render();
+            }
+            
+            toggleSheetType() {
+                const sheet = this.getCurrentSheet();
+                const currentIndex = this.sheetTypes.indexOf(sheet.type);
+                const nextIndex = (currentIndex + 1) % this.sheetTypes.length;
+                sheet.type = this.sheetTypes[nextIndex];
+                
+                if (sheet.type === 'List' || sheet.type === 'Axiomatic') {
+                    sheet.focusL = 0; 
+                }
+                
+                this.saveState();
+                this.render();
+            }
+
+            // --- User Actions ---
+
+            editCell() {
+                const sheet = this.getCurrentSheet();
+                const cell = this.getCurrentCell();
+                if (!cell) return;
+
+                const newLabel = this.labelInput.value.trim() || cell.getCurrentNode()?.label || '...';
+                const newContent = this.contentInput.value.trim();
+
+                cell.editNode(newLabel, newContent); 
+
+                sheet.recalculate();
+                this.saveState();
+                this.render();
+            }
+            
+            sortData() {
+                // ... (sortData logic remains the same)
+                const sheet = this.getCurrentSheet();
+                
+                if (this.navigationMode === 'global') {
+                    if (sheet.type === 'List') {
+                        sheet.sortCellsByLabel();
+                    } else {
+                        console.log("Global cell sorting is only implemented for List (Index/I) type for stability.");
+                    }
+                } else {
+                    const cell = this.getCurrentCell();
+                    cell.sortNodesByLabel();
+                }
+                
+                sheet.recalculate(); 
+                this.saveState();
+                this.render();
+            }
+            
+            // --- Path Automation (Algebraic Sequence) ---
+            
+            toggleRecording() {
+                // ... (recording logic remains the same)
+                const sheet = this.getCurrentSheet();
+                if (this.isRecording) {
+                    this.isRecording = false;
+                    this.recordBtn.textContent = 'Start Defining Sequence';
+                    this.recordBtn.classList.remove('bg-danger', 'hover-bg-danger');
+                    this.recordBtn.classList.add('bg-orange-600');
+                    this.recordingStatusEl.textContent = 'Sequence definition stopped. Ready to run.';
+                } else {
+                    this.startFocusL = sheet.focusL; 
+                    this.startFocusW = sheet.focusW;
+                    
+                    this.isRecording = true;
+                    this.recordedPath = []; 
+                    this.pathLengthEl.textContent = '0 steps';
+                    this.recordBtn.textContent = 'Stop Defining Sequence';
+                    this.recordBtn.classList.remove('bg-orange-600');
+                    this.recordBtn.classList.add('bg-danger');
+                    this.recordingStatusEl.textContent = 'Defining Sequence...';
+                }
+                this.render();
+            }
+            
+            /**
+             * Runs the recorded path sequence.
+             * @math Sequence: $P(n) = P(n-1) + \text{Direction}$ where $P(0)$ is the start position.
+             */
+            async runPath() {
+                if (this.recordedPath.length === 0) {
+                    this.recordingStatusEl.textContent = 'Sequence is empty. Start defining first.';
+                    return;
+                }
+                
+                const sheet = this.getCurrentSheet();
+                sheet.focusL = this.startFocusL;
+                sheet.focusW = this.startFocusW;
+                this.render(); 
+
+                this.recordingStatusEl.textContent = 'Running sequence...';
+                this.runBtn.disabled = true;
+                
+                for (let n = 0; n < this.recordedPath.length; n++) {
+                    const direction = this.recordedPath[n];
+                    this.navigate(direction, true); // True to skip recording the run itself
+                    await new Promise(resolve => setTimeout(resolve, 150)); 
+                }
+                
+                this.recordingStatusEl.textContent = 'Sequence run complete.';
+                this.runBtn.disabled = false;
+                this.render();
+            }
+
+
+            navigate(direction, skipRecord = false) {
+                // ... (navigation logic remains the same)
+                const sheet = this.getCurrentSheet();
+                const step = this.stepSize;
+                
+                if (this.isRecording && !skipRecord) {
+                    this.recordedPath.push(direction);
+                }
+                
+                if (['NORTH', 'SOUTH', 'WEST', 'EAST', 'NORTHEAST', 'SOUTHEAST', 'SOUTHWEST', 'NORTHWEST'].includes(direction)) {
+                    
+                    if (this.navigationMode === 'global') {
+                        let newL = sheet.focusL;
+                        let newW = sheet.focusW;
+
+                        switch (sheet.type) {
+                            case 'List':
+                                if (direction === 'NORTH') newW -= step;
+                                if (direction === 'SOUTH') newW += step;
+                                if (direction === 'EAST') newL += step;
+                                if (direction === 'WEST') newL -= step;
+                                if (direction === 'NORTHEAST') { newW -= step; newL += step; }
+                                if (direction === 'NORTHWEST') { newW -= step; newL -= step; }
+                                if (direction === 'SOUTHEAST') { newW += step; newL += step; }
+                                if (direction === 'SOUTHWEST') { newW += step; newL -= step; }
+                                // newL = 0; 
+                                break;
+                            case 'Grid':
+                                if (direction === 'NORTH') newW -= step; 
+                                if (direction === 'SOUTH') newW += step; 
+                                if (direction === 'WEST') newL -= step;  
+                                if (direction === 'EAST') newL += step;
+                                if (direction === 'NORTHEAST') { newW -= step; newL += step; }
+                                if (direction === 'SOUTHEAST') { newW += step; newL += step; }
+                                if (direction === 'SOUTHWEST') { newW += step; newL -= step; }
+                                if (direction === 'NORTHWEST') { newW -= step; newL -= step; }
+                                break;
+                            case 'Axiomatic':
+                                if (direction === 'NORTH') newW -= step; 
+                                if (direction === 'SOUTH') newW += step; 
+                                if (direction === 'WEST') newL -= step;  
+                                if (direction === 'EAST') newL += step; 
+                                break;
+                        }
+                        
+                        sheet.focusL = newL;
+                        sheet.focusW = newW;
+                        sheet.ensureCell(sheet.focusL, sheet.focusW);
+                        this.saveState();
+
+                    } else {
+                        const cell = this.getCurrentCell();
+                        if (!cell) return;
+                        const focusedNode = cell.getCurrentNode();
+                        
+                        let targetX = focusedNode.x;
+                        let targetY = focusedNode.y;
+                        const targetZ = focusedNode.z; 
+                        
+                        switch (direction) {
+                            case 'NORTH': targetY = focusedNode.y - step; break; 
+                            case 'SOUTH': targetY = focusedNode.y + step; break; 
+                            case 'WEST': targetX = focusedNode.x - step; break; 
+                            case 'EAST': targetX = focusedNode.x + step; break; 
+                            case 'NORTHEAST': targetY = focusedNode.y - step; targetX = focusedNode.x + step; break;
+                            case 'SOUTHEAST': targetY = focusedNode.y + step; targetX = focusedNode.x + step; break;
+                            case 'SOUTHWEST': targetY = focusedNode.y + step; targetX = focusedNode.x - step; break;
+                            case 'NORTHWEST': targetY = focusedNode.y - step; targetX = focusedNode.x - step; break;
+                        }
+
+                        let newIndex = findNodeByCoords(cell, targetX, targetY, targetZ);
+                        
+                        if (newIndex !== -1) {
+                            cell.focusNodeIndex = newIndex;
+                        } else {
+                            cell.addNode(targetX, targetY, targetZ, `Node ${cell.nodes.length}`, `Node at x:${targetX}, y:${targetY}, z:${targetZ}`);
+                            this.saveState();
+                        }
+                        cell.updateFromNode(sheet);
+                    }
+
+                } else if (direction === 'ENTER' || direction === 'EXIT') {
+                    
+                    if (this.navigationMode === 'global') {
+                        const cell = this.getCurrentCell();
+                        
+                        if (direction === 'ENTER') {
+                            const focusedNode = cell.getCurrentNode(); 
+
+                            if (!focusedNode) { console.error("Cannot enter: Cell has no node to attach a subsheet."); return; }
+
+                            const coordLabel = this.getCoordLabel(sheet.focusL, sheet.focusW, sheet.type);
+                            const nodeCoords = focusedNode.nodes ? `(x${focusedNode.x}y${focusedNode.y}z${focusedNode.z})` : '';
+                            const pathSegment = `${coordLabel}${nodeCoords}`;
+                            
+                            if (!focusedNode.hasSubSheet) {
+                                focusedNode.subSheet = new Sheet(this, sheet.type); 
+                                focusedNode.hasSubSheet = true;
+                                this.saveState(); 
+                            }
+                            this.sheetStack.push(focusedNode.subSheet);
+                            this.pathHistory.push(pathSegment);
+
+                        } else if (direction === 'EXIT' && this.sheetStack.length > 1) {
+                            this.sheetStack.pop();
+                            this.pathHistory.pop(); 
+                            this.saveState(); 
+                        }
+                    } else {
+                        const cell = this.getCurrentCell();
+                        const focusedNode = cell.getCurrentNode(); 
+                        if (!focusedNode) { console.error("Cannot navigate Z: Cell has no nodes."); return; }
+                        
+                        const targetZ = focusedNode.z + (direction === 'ENTER' ? 1 : -1);
+                        const targetX = focusedNode.x;
+                        const targetY = focusedNode.y;
+                        
+                        let newIndex = findNodeByCoords(cell, targetX, targetY, targetZ);
+                        
+                        if (newIndex !== -1) {
+                            cell.focusNodeIndex = newIndex;
+                        } else {
+                            if (targetZ >= 0) {
+                                cell.addNode(targetX, targetY, targetZ, `Node ${cell.nodes.length}`, `Node at x:${targetX}, y:${targetY}, z:${targetZ}`);
+                                this.saveState();
+                            } else {
+                                console.log("Cannot navigate Z into negative depth from current position.");
+                            }
+                        }
+                        cell.updateFromNode(sheet);
+                    }
+                }
+
+                this.render();
+            }
+
+            // --- Coordinate Labeling Logic (Uses new CoordinateMapper) ---
+            getCoordLabel(l, w, type) {
+                switch(type) {
+                    case 'Grid':
+                        return CoordinateMapper.toExcelCoords(l, w);
+                    case 'Axiomatic':
+                        return `P[${w}]S[${l}]`;
+                    case 'List':
+                        return `I[${w}]`;
+                    default:
+                        return `L:${l}W:${w}`;
+                }
+            }
+
+            getAxisLabels(type, step) {
+                // ... (axis label logic remains the same)
+                const isStepPlural = step > 1;
+                const pluralStep = isStepPlural ? step : '';
+
+                if (this.navigationMode === 'global') {
+                    switch(type) {
+                        case 'Grid': return { n: `N (H-${pluralStep})`, s: `S (H+${pluralStep})`, w: `W (L-${pluralStep})`, e: `E (L+${pluralStep})`, ne: 'NE', se: 'SE', sw: 'SW', nw: 'NW' };
+                        case 'Axiomatic': return { n: `P- (Predicate -${pluralStep})`, s: `P+ (Predicate +${pluralStep})`, w: `S- (Subject -${pluralStep})`, e: `S+ (Subject +${pluralStep})` };
+                        case 'List': return { n: `N (H-${pluralStep})`, s: `S (H+${pluralStep})`, w: `W (L-)`, e: `E (L+)`, ne: 'NE', se: 'SE', sw: 'SW', nw: 'NW' };
+                        default: return { n: 'N', s: 'S', w: 'W', e: 'E', ne: 'NE', se: 'SE', sw: 'SW', nw: 'NW' };
+                    }
+                } else {
+                    return { n: `N (Y-${pluralStep})`, s: `S (Y+${pluralStep})`, w: `W (X-${pluralStep})`, e: `E (X+${pluralStep})`, ne: 'NE', se: 'SE', sw: 'SW', nw: 'NW' };
+                }
+            }
+
+            // --- Rendering ---
+
+            render() {
+                const currentSheet = this.getCurrentSheet();
+                const focusCell = this.getCurrentCell(); 
+                const focusedNode = focusCell ? focusCell.getCurrentNode() : null;
+                const isGlobalMode = this.navigationMode === 'global';
+                
+                // Set palindrome status based on focused cell
+                this.setPalindromeStatus(focusCell?.isPalindromic || false);
+
+                // Update Path Automation Status
+                this.pathLengthEl.textContent = `${this.recordedPath.length} steps`;
+                if (!this.isRecording) {
+                    this.recordingStatusEl.textContent = this.recordedPath.length > 0 ? 'Ready to run.' : '';
+                }
+
+                // Set input values
+                this.labelInput.value = focusedNode ? focusedNode.label : '';
+                this.contentInput.value = focusedNode ? focusedNode.content : '';
+
+                // Update Path Breadcrumbs
+                const pathDisplay = (this.pathHistory.length > 0 ? this.pathHistory.join(' / ') : 'Root');
+                // Using Bootstrap text colors
+                this.currentDepthEl.innerHTML = `Path (H-Axis): <span class="font-monospace text-info">${pathDisplay}</span>`;
+                
+                // Update Sheet Type & Sort Button Label
+                this.currentSheetTypeEl.textContent = `Type: ${currentSheet.type}`;
+                this.sortBtn.textContent = isGlobalMode 
+                    ? `Sort ${currentSheet.type === 'List' ? 'Cells' : 'Data'}` 
+                    : `Sort Nodes`;
+                this.sortBtn.disabled = isGlobalMode && currentSheet.type !== 'List';
+
+
+                // Update L/W/P/S/I Coordinates
+                const coordLabel = this.getCoordLabel(currentSheet.focusL, currentSheet.focusW, currentSheet.type);
+                this.currentCoordsEl.textContent = `Global L/W: L:${currentSheet.focusL}, W:${currentSheet.focusW} (${coordLabel})`;
+                
+                // Update Node Coordinates (Local x, y, z)
+                if (focusedNode) {
+                    this.currentNodeCoordsEl.classList.remove('d-none');
+                    this.currentNodeCoordsEl.textContent = 
+                        `Local X/Y/Z: Node ${focusCell.focusNodeIndex + 1}/${focusCell.nodes.length} (x:${focusedNode.x}, y:${focusedNode.y}, z:${focusedNode.z})`;
+                    this.currentNodeValueEl.innerHTML = `${focusCell.value}`;
+                } else {
+                    this.currentNodeCoordsEl.classList.add('d-none');
+                }
+
+                // Update Toggle Button Labels
+                this.navToggleBtn.textContent = isGlobalMode ? 'Mode: Global' : 'Mode: Local';
+                this.viewToggleBtn.textContent = `View: ${this.currentViewMode === 'Centered' ? '10x10' : 'Top-Down'}`;
+                this.typeToggleBtn.textContent = `Type: ${currentSheet.type}`; 
+
+                // Update ENTER/EXIT button labels
+                this.navEnter.textContent = isGlobalMode ? 'Enter (D+)' : 'Enter (Z+)';
+                this.navExit.textContent = isGlobalMode ? 'Exit (D-)' : 'Exit (Z-)';
+
+                // Update directional button labels
+                const axisLabels = this.getAxisLabels(currentSheet.type, this.stepSize);
+                
+                this.navN.textContent = axisLabels.n;
+                this.navS.textContent = axisLabels.s;
+                this.navW.textContent = axisLabels.w;
+                this.navE.textContent = axisLabels.e;
+                this.navNE.textContent = axisLabels.ne;
+                this.navSE.textContent = axisLabels.se;
+                this.navSW.textContent = axisLabels.sw;
+                this.navNW.textContent = axisLabels.nw;
+                
+                if (isGlobalMode && currentSheet.type === 'List') {
+                    // Disabled state logic remains here if needed
+                } else {
+                    this.navW.disabled = false;
+                    this.navE.disabled = false;
+                }
+
+                this.sheetDisplay.innerHTML = this.renderSheetStackHTML();
+
+                // this.labelInput.focus();
+            }
+
+            renderSheetStackHTML() {
+                // ... (renderSheetStackHTML logic remains the same)
+                let html = '';
+                this.sheetStack.forEach((sheet, index) => {
+                    const depth = index + 1;
+                    const isCurrent = (depth === this.sheetStack.length);
+
+                    const scaleFactor = 1 - (this.sheetStack.length - depth) * 0.05;
+                    const opacity = 0.6 + (this.sheetStack.length - depth) * 0.1; 
+                    // Using standard Bootstrap backgrounds or approximation
+                    const bg = (depth % 2 === 1) ? 'bg-light' : 'bg-gray-200'; // Approximating original colors
+                    
+                    const activeSheetClass = isCurrent ? 'z-3 ring-4 ring-primary shadow-lg' : 'z-1'; // z-index in Bootstrap is limited
+                    
+                    // Note: Custom Z-index and ring classes are not standard Bootstrap. 
+                    // Adjusted for basic Bootstrap visual hierarchy and kept custom styles for 3D.
+                    html += `
+                        <div class="sheet-container ${bg} ${activeSheetClass} rounded-3 p-1 p-sm-2 mb-4 transition-all duration-300"
+                             style="transform: scale(${scaleFactor}); opacity: ${opacity}; box-shadow: 0 ${10 + (depth * 2)}px ${30 + (depth * 5)}px rgba(0, 0, 0, ${0.4 * opacity});">
+                            <h3 class="fs-6 fw-semibold text-secondary mb-1">
+                                Sheet Depth: ${depth}. Type: ${sheet.type}. Absolute Focus: ${this.getCoordLabel(sheet.focusL, sheet.focusW, sheet.type)}.
+                                ${isCurrent ? '<span class="text-primary">(Active)</span>' : ''}
+                            </h3>
+                            ${this.renderSheetGridHTML(sheet, isCurrent)}
+                        </div>
+                    `;
+                });
+                return html;
+            }
+
+            renderSheetGridHTML(sheet, isCurrent) {
+                // ... (renderSheetGridHTML logic remains the same, but uses CoordinateMapper)
+                const VIEWPORT_SIZE = 10;
+                const HALF_VP = Math.floor(VIEWPORT_SIZE / 2);
+                
+                const coords = [];
+                for (const w in sheet.grid) {
+                    for (const l in sheet.grid[w]) {
+                        coords.push({ l: parseInt(l), w: parseInt(w) });
+                    }
+                }
+
+                
+                let startL, endL, startW, endW;
+
+                if (this.currentViewMode === 'Centered' || coords.length === 0) {
+                    startL = sheet.focusL - HALF_VP;
+                    endL = sheet.focusL + (VIEWPORT_SIZE - HALF_VP);
+                    startW = sheet.focusW - HALF_VP;
+                    endW = sheet.focusW + (VIEWPORT_SIZE - HALF_VP);
+                } else {
+                    const minL = Math.min(sheet.focusL, ...coords.map(c => c.l));
+                    const maxL = Math.max(sheet.focusL, ...coords.map(c => c.l));
+                    const minW = Math.min(sheet.focusW, ...coords.map(c => c.w));
+                    const maxW = Math.max(sheet.focusW, ...coords.map(c => c.w));
+
+                    startL = minL - 1;
+                    endL = maxL + 2;
+                    startW = minW - 1;
+                    endW = maxW + 2;
+                }
+
+                if (sheet.type === 'List' || sheet.type === 'Axiomatic') {
+                    startL = Math.min(sheet.focusL - 2, 0); 
+                    endL = Math.max(sheet.focusL + 3, 3);
+                    
+                    if (sheet.type === 'List') {
+                        startL = -1;
+                        endL = 2;
+                    }
+                }
+                
+                if (startL >= endL) endL = startL + 1;
+                if (startW >= endW) endW = startW + 1;
+
+
+                let html = '<div class="table-responsive"><table class="table table-bordered table-sm w-100 text-smaller border-secondary">';
+
+                // Header Row (Column Headers)
+                html += '<thead class="bg-light text-secondary">';
+                html += '<tr>';
+                html += '<th class="w-8 sticky-cell border border-secondary p-1"></th>'; 
+                for (let l = startL; l < endL; l++) {
+                    let label;
+                    switch(sheet.type) {
+                        case 'Grid': label = CoordinateMapper.toColString(l); break; // Optimized CoordinateMapper usage
+                        case 'Axiomatic': label = l >= 0 ? `S[${l}]` : `S[${l}]`; break;
+                        case 'List': label = l === 0 ? 'Label (L=0)' : `L[${l}]`; break;
+                    }
+                    html += `<th class="w-16 border border-secondary p-1 ${l < 0 ? 'text-danger' : ''}">${label}</th>`;
+                }
+                html += '</tr></thead>';
+
+                // Body Rows
+                html += '<tbody>';
+                for (let w = startW; w < endW; w++) {
+                    html += '<tr>';
+                    
+                    // Row Headers
+                    let rowLabel;
+                    const rowClass = w < 0 ? 'text-danger' : '';
+                    switch(sheet.type) {
+                        case 'Grid': rowLabel = w >= 0 ? (w + 1) : `H[${w}]`; break;
+                        case 'Axiomatic': rowLabel = w >= 0 ? `P[${w}]` : `P[${w}]`; break;
+                        case 'List': rowLabel = w >= 0 ? `H[${w}]` : `H[${w}]`; break;
+                    }
+                    
+                    // sticky-cell custom class is used here
+                    html += `<td class="w-8 sticky-cell border border-secondary fw-bold p-1 ${rowClass} text-secondary">${rowLabel}</td>`;
+
+                    // Cells
+                    for (let l = startL; l < endL; l++) {
+                        const cell = sheet.getCell(l, w);
+                        const isFocused = isCurrent && (l === sheet.focusL && w === sheet.focusW);
+                        
+                        let nodeCount = 0;
+                        let focusedNode = null;
+                        let cellLabel = '';
+
+                        if (cell) {
+                            cell.ensureFocus(sheet); 
+                            nodeCount = cell.nodes.length;
+                            focusedNode = cell.getCurrentNode();
+                            
+                            cellLabel = isNaN(parseFloat(cell.value)) || cell.value === 'ERROR' || sheet.type === 'List'
+                                ? (focusedNode ? focusedNode.label : '...')
+                                : cell.value;
+                            
+                            // use cell.evaluate()?
+                        }
+                        
+                        // Custom classes for focus/hover and palette approximation
+                        let cellClasses = isFocused ? 'cell-focus' : 'bg-white text-dark';
+                        cellClasses += ' text-truncate';
+                        const isEmptyClass = !cell ? 'text-muted fst-italic bg-light-subtle' : '';
+                        const palindromeClass = cell?.isPalindromic ? 'bg-info-subtle border-info' : '';
+
+                        let cellIcon = '';
+                        if (focusedNode && focusedNode.hasSubSheet) {
+                            cellIcon = '📁'; 
+                        } else if (nodeCount > 1) {
+                            cellIcon = `•${nodeCount}`; 
+                        } else if (cell?.isPalindromic) {
+                            cellIcon = '✨'; // Palindrome indicator
+                        }
+
+                        const absCoordLabel = this.getCoordLabel(l, w, sheet.type);
+                        const nodeCoords = focusedNode ? `(x:${focusedNode.x}, y:${focusedNode.y}, z:${focusedNode.z})` : '(No Nodes)';
+                        
+                        // Added d-flex and justify-content-between to mimic the original flex layout
+                        html += `
+                            <td class="${cellClasses} ${isEmptyClass} ${palindromeClass} border border-secondary h-10 p-1 align-middle cursor-pointer"
+                                onclick="app.setFocus(${l}, ${w}, ${isCurrent})"
+                                title="Coords: ${absCoordLabel}. Value: ${cell ? cell.value : 'N/A'}. Node Coords: ${nodeCoords}">
+                                <div class="cell-content d-flex align-items-center justify-content-between">
+                                    <span class="text-dark ${nodeCount === 0 ? 'text-muted fst-italic' : ''}">${cellLabel}</span>
+                                    <span class="fs-6 text-secondary">${cellIcon}</span>
+                                </div>
+                            </td>
+                        `;
+                    }
+                    html += '</tr>';
+                }
+                html += '</tbody></table></div>';
+                return html;
+            }
+
+            setFocus(l, w, isCurrent) {
+                if (isCurrent) {
+                    const sheet = this.getCurrentSheet();
+                    sheet.focusL = l;
+                    sheet.focusW = w;
+                    this.render();
+                } else {
+                    console.log("Cannot select cells in background sheets.");
+                }
+            }
+        }
+
+        // Initialize the app on window load
+        window.onload = () => {
+            window.app = new ExcelZApp(); 
+        };
+    </script>
+</body>
+</html>
