@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spatial Navigator (Bootstrap)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom styles for visual depth and mobile layout */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #212529; /* Approximated dark background: $gray-900 */
+        }
+        /* Preserve the complex 3D transition and sticky behavior */
+        table { table-layout: fixed; }
+        .sheet-container { transition: transform 0.3s ease, box-shadow 0.3s ease; transform-style: preserve-3d; }
+        .cell-focus { 
+            outline: 3px solid #0d6efd; /* Approximated $blue-500 */
+            background-color: #cfe2ff; /* Approximated $blue-100 */
+            position: relative; 
+            z-index: 10; 
+        }
+        .cell-content { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        /* Crucial for the spreadsheet look */
+        .sticky-cell { position: sticky; left: 0; z-index: 5; background-color: #dee2e6; } 
+
+        /* Custom Bootstrap Button Styles (since utility classes are limited for custom looks) */
+        .nav-btn {
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            color: white;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border: none;
+        }
+        .nav-btn:hover {
+            opacity: 0.9;
+            transform: scale(1.05);
+        }
+        .nav-btn:active {
+            transform: translateY(1px) scale(1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .nav-btn-sm {
+            padding: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: white;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            width: 100%;
+            border: none;
+        }
+        
+        .btn-danger { background-color: firebrick; }
+        .btn-success { background-color: mediumseagreen; }
+        .btn-secondary { background-color: #888; }
+        .bg-purple-600 { background-color: #6a1b9a; }
+        .bg-pink-600 { background-color: #d81b60; }
+        .bg-indigo-600 { background-color: #3f51b5; }
+        .bg-teal-600 { background-color: #00897b; }
+        .bg-orange-600 { background-color: #fb8c00; }
+        .bg-yellow-600 { background-color: #fdd835; color: #212529 !important; }
+
+    </style>
+</head>
+<body class="p-4 p-sm-5 min-vh-100 d-flex align-items-center justify-content-center bg-body-tertiary">
+
+    <div id="app" class="w-100 mw-1000 bg-dark shadow-lg rounded-3 p-4 p-sm-5 text-light">
+        <h1 class="fs-3 fw-bold text-white mb-2 text-center">Unified 2D Spatial Navigator</h1>
+        <p class="fs-6 text-secondary mb-4 text-center">
+            Optimized using Base-26 Algebra and Pattern Sequencing.
+        </p>
+
+        <div class="bg-dark-subtle p-3 rounded-3 mb-4 fs-6 text-secondary d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span id="current-depth" class="w-100 w-sm-auto">Path: Root</span>
+            <span id="current-sheet-type" class="w-100 w-sm-auto text-warning fw-semibold">Type: Grid</span>
+            <span id="current-coords" class="w-100 w-sm-auto">L: 0, W: 0 (A1)</span>
+            <span id="current-node-coords" class="w-100 w-sm-auto d-none">Node: N/A</span>
+            <span id="current-cell-id" class="w-100 w-sm-auto"></span>
+            <span id="palindrome-status" class="w-100 w-sm-auto text-info fw-bold d-none">Palindrome Detected!</span>
+        </div>
+
+        <div class="mb-4 bg-dark-subtle p-4 rounded-3">
+            <label for="label-input" class="form-label fs-6 fw-medium text-secondary mb-1">Grid Label (Visible in Sheet):</label>
+            <input type="text" id="label-input" placeholder="Short label for the grid"
+                   class="form-control mb-3 border border-secondary bg-dark text-white focus-ring focus-ring-primary transition-all duration-150">
+            
+            <label for="content-input" class="form-label fs-6 fw-medium text-secondary mb-1">Semantic Content (Full Value/Formula):</label>
+            <textarea id="content-input" placeholder="Full content, formula, or script for the node."
+                   rows="3" class="form-control border border-secondary bg-dark text-white focus-ring focus-ring-primary transition-all duration-150"></textarea>
+
+            <button onclick="app.editCell()" class="mt-3 w-100 btn btn-primary fw-semibold shadow-sm transition-all duration-150 transform hover-scale-105">
+                Save Node (Enter Key)
+            </button>
+        </div>
+
+        <div id="sheet-display-area" class="w-100 bg-dark-subtle rounded-3 p-2 min-h-300 overflow-auto">
+            </div>
+
+        <div class="mt-4 p-4 bg-dark-subtle rounded-3 shadow-inner">
+            <h2 class="fs-4 fw-semibold text-white mb-3 text-center">Navigation & Automation Console</h2>
+            
+            <div class="d-flex flex-wrap justify-content-center gap-3 gap-sm-4">
+                
+                <div class="d-flex flex-column space-y-3 w-100 w-sm-25 mw-300">
+                    <button onclick="app.toggleNavigationMode()" id="nav-toggle-btn" 
+                            class="nav-btn bg-purple-600">
+                        Mode: Global
+                    </button>
+                    <button onclick="app.toggleViewMode()" id="view-toggle-btn" 
+                            class="nav-btn bg-pink-600">
+                        View: 10x10
+                    </button>
+                    <button onclick="app.toggleSheetType()" id="type-toggle-btn" 
+                            class="nav-btn bg-indigo-600">
+                        Type: Grid
+                    </button>
+                </div>
+
+                <div class="d-flex justify-content-between gap-2 w-100 w-sm-20 mw-200">
+                    <button onclick="app.navigate('EXIT')" id="nav-exit" class="nav-btn btn-danger w-50">
+                        Exit
+                    </button>
+                    <button onclick="app.navigate('ENTER')" id="nav-enter" class="nav-btn btn-success w-50">
+                        Enter
+                    </button>
+                </div>
+                
+                <div class="row row-cols-3 g-2 w-100 w-sm-20 mw-200">
+                    <div class="col">
+                        <button onclick="app.navigate('NORTHWEST')" id="nav-nw" class="nav-btn-sm btn-secondary">NW</button>
+                    </div>
+                    <div class="col">
+                        <button onclick="app.navigate('NORTH')" id="nav-n" class="nav-btn-sm btn-secondary">N</button>
+                    </div>
+                    <div class="col">
+                        <button onclick="app.navigate('NORTHEAST')" id="nav-ne" class="nav-btn-sm btn-secondary">NE</button>
+                    </div>
+                    <div class="col">
+                        <button onclick="app.navigate('WEST')" id="nav-w" class="nav-btn-sm btn-secondary">W</button>
+                    </div>
+                    <div class="col"></div> 
+                    <div class="col">
+                        <button onclick="app.navigate('EAST')" id="nav-e" class="nav-btn-sm btn-secondary">E</button>
+                    </div>
+                    <div class="col">
+                        <button onclick="app.navigate('SOUTHWEST')" id="nav-sw" class="nav-btn-sm btn-secondary">SW</button>
+                    </div>
+                    <div class="col">
+                        <button onclick="app.navigate('SOUTH')" id="nav-s" class="nav-btn-sm btn-secondary">S</button>
+                    </div>
+                    <div class="col">
+                        <button onclick="app.navigate('SOUTHEAST')" id="nav-se" class="nav-btn-sm btn-secondary">SE</button>
+                    </div>
+                </div>
+
+                <div class="w-100 w-sm-20 space-y-3 mw-300 d-flex flex-column gap-3 d-none">
+                    <button onclick="app.pickData()" id="pick-btn"
+                            class="nav-btn bg-yellow-600 fw-bold w-100">
+                        Pick Data
+                    </button>
+                    <button onclick="app.sortData()" id="sort-btn"
+                            class="nav-btn bg-yellow-600 fw-bold w-100">
+                        Sort Data
+                    </button>
+                    <button onclick="app.dropData()" id="drop-btn"
+                            class="nav-btn bg-yellow-600 fw-bold w-100">
+                        Drop Data
+                    </button>
+                </div>
+
+                <div class="d-flex align-items-center gap-2 w-100 w-sm-25 mw-200 justify-content-center justify-content-sm-end">
+                    <label for="step-size-input" class="fs-6 text-secondary">Jump Size:</label>
+                    <input type="number" id="step-size-input" value="1" min="1" 
+                           class="form-control w-25 bg-dark border border-secondary text-white text-center focus-ring">
+                </div>
+            </div>
+
+            <div class="mt-4 border-top border-secondary-subtle pt-3 d-none">
+                <h3 class="fs-5 fw-semibold text-white mb-3 text-center">Algebraic Sequence Automation</h3>
+                <div class="d-flex flex-column flex-sm-row gap-2 gap-sm-3 align-items-center">
+                    <button onclick="app.toggleRecording()" id="record-btn" class="nav-btn w-100 w-sm-auto bg-orange-600 transition duration-150">
+                        Start Defining Sequence
+                    </button>
+                    <button onclick="app.runPath()" id="run-btn" class="nav-btn w-100 w-sm-auto bg-teal-600 transition duration-150">
+                        Run Sequence (<span id="path-length">0 steps</span>)
+                    </button>
+                    <span id="recording-status" class="fs-6 text-info font-monospace fst-italic"></span>
+                </div>
+            </div>
+        </div>
+
+        <div id="node-display-area" class="mt-4 w-100 bg-dark-subtle rounded-3 p-2 min-h-300 overflow-auto text-white">
+                <h3 class="fs-5 fw-semibold text-white mb-3 text-center">Content Display Area</h3>
+            <div id="current-node-value" class="p-3"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // IMPORTANT: Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-excel-z-app';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth, userId = 'anonymous';
+        
+        // =========================================================================
+        // MATHEMATICAL UTILITY MODULE (COORDINATE MAPPING & PATTERN DETECTION)
+        // =========================================================================
+
+        /**
+         * Utilizes Base-26 algebra (place value system) for efficient coordinate mapping.
+         * The Excel column system is an irregular base-26 system (A=1, Z=26, AA=27).
+         */
+        const CoordinateMapper = {
+            /**
+             * Converts a 0-indexed column integer (L) to its Excel column string (Base-26).
+             * @param {number} l - 0-indexed column (0=A, 25=Z, 26=AA).
+             * @returns {string} Excel column name.
+             * @math Algebra: Base-26 conversion (non-zero base).
+             */
+            toColString(l) {
+                if (l < 0) return `L[${l}]`;
+                let colStr = '';
+                let temp = l;
+                while (temp >= 0) {
+                    const remainder = temp % 26;
+                    colStr = String.fromCharCode(65 + remainder) + colStr;
+                    temp = Math.floor(temp / 26) - 1;
+                }
+                return colStr;
+            },
+
+            /**
+             * Converts an Excel column string to its 0-indexed column integer (L).
+             * @param {string} colStr - Excel column name (e.g., A, AA).
+             * @returns {number} 0-indexed column.
+             * @math Algebra/Place Value: $\sum_{i=0}^{N-1} (\text{char} - 64) \cdot 26^i - 1$
+             */
+            fromColString(colStr) {
+                let l = 0;
+                for (let i = 0; i < colStr.length; i++) {
+                    // charCodeAt(i) - 64 gives A=1, B=2, etc. (The "digit" value)
+                    const value = colStr.charCodeAt(i) - 64;
+                    // The position/place value uses exponents of 26
+                    l = l * 26 + value;
+                }
+                // Subtract 1 because Excel is 1-indexed (A=1), but we want 0-indexed (A=0).
+                return l - 1; 
+            },
+
+            /**
+             * Converts (Length/L, Width/W) coordinates to Excel format (e.g., (0, 0) -> A1).
+             * @param {number} l - 0-indexed Length (column).
+             * @param {number} w - 0-indexed Width (row).
+             * @returns {string} Excel coordinate.
+             */
+            toExcelCoords(l, w) {
+                const colStr = this.toColString(l);
+                const rowStr = w >= 0 ? (w + 1).toString() : `W[${w}]`;
+                return `${colStr}${rowStr}`;
+            },
+
+            /**
+             * Checks if a string or number is a palindrome (reads the same forwards and backwards).
+             * @param {string|number} content - The value to check.
+             * @returns {boolean} True if palindromic.
+             * @math Pattern Recognition: Symmetry of sequence elements.
+             */
+            isPalindrome(content) {
+                const str = String(content).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                return str === str.split('').reverse().join('');
+            }
+        };
+
+        // Helper function to find a node by its local x, y, z coordinates
+        function findNodeByCoords(cell, targetX, targetY, targetZ) {
+            return cell.nodes.findIndex(n => 
+                n.x === targetX && n.y === targetY && n.z === targetZ
+            );
+        }
+
+        /**
+         * Class representing a single cell in the sheet.
+         */
+        class Cell {
+            constructor(l, w) {
+                this.l = l; 
+                this.w = w; 
+                this.nodes = []; 
+                this.focusNodeIndex = -1; 
+                this.value = ''; 
+                this.isPalindromic = false; // New attribute for pattern detection
+            }
+
+            getCurrentNode() {
+                return this.nodes.length > 0 && this.focusNodeIndex !== -1 ? this.nodes[this.focusNodeIndex] : null;
+            }
+            
+            ensureFocus(sheet) {
+                if (this.nodes.length === 0) {
+                    this.addNode(0, 0, 0, 'New Cell', `Node at ${CoordinateMapper.toExcelCoords(this.l, this.w)}`);
+                    this.saveState(sheet); 
+                }
+                if (this.focusNodeIndex === -1) {
+                     this.focusNodeIndex = 0;
+                }
+                this.updateFromNode(sheet);
+            }
+            
+            updateFromNode(sheet) {
+                const node = this.getCurrentNode();
+                const content = node ? node.content : '';
+                this.evaluate(sheet, content);
+                
+                // Pattern Detection: Check if the content is a palindrome
+                this.isPalindromic = CoordinateMapper.isPalindrome(content); 
+                if (this.isPalindromic) {
+                    sheet.app.setPalindromeStatus(true);
+                } else if (sheet.app.isPalindromeStatus === true) {
+                    // Only unset if the sheet is not focused on another palindromic cell
+                    sheet.app.setPalindromeStatus(false);
+                }
+            }
+
+            addNode(x, y, z, label, content) {
+                // ... (rest of addNode logic is unchanged)
+                const newNode = {
+                    label: label, 
+                    content: content,
+                    x: x, 
+                    y: y, 
+                    z: z, 
+                    hasSubSheet: false, 
+                    subSheet: null
+                };
+                this.nodes.push(newNode);
+                
+                this.nodes.sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x); 
+                
+                this.focusNodeIndex = this.nodes.findIndex(n => n.x === x && n.y === y && n.z === z); 
+                return newNode;
+            }
+
+            editNode(newLabel, newContent) {
+                const node = this.getCurrentNode();
+                if (node) {
+                    node.label = newLabel;
+                    node.content = newContent;
+                } else if (newContent.length > 0) {
+                    this.addNode(0, 0, 0, newLabel, newContent);
+                }
+            }
+            
+            /**
+             * Evaluates a formula (if content starts with '=') using algebraic substitution.
+             * @param {Sheet} sheet - The current sheet context.
+             * @param {string} content - The semantic content or formula.
+             * @math Arithmetic/Algebra: Addition, Subtraction, Multiplication, Division, Substitution.
+             */
+            evaluate(sheet, content) {
+                if (content.startsWith('=')) {
+                    let formula = content.substring(1);
+
+                    // Regex to find Excel-style references (e.g., A1, B10, etc.)
+                    formula = formula.replace(/([A-Z]+)(\d+)/g, (match, colStr, rowStr) => {
+                        // Use the optimized CoordinateMapper for algebraic substitution
+                        const l = CoordinateMapper.fromColString(colStr);
+                        const w = parseInt(rowStr) - 1; 
+
+                        const targetCell = sheet.getCell(l, w);
+                        if (targetCell) {
+                            targetCell.ensureFocus(sheet);
+                            // Use the evaluated value of the target cell
+                            return parseFloat(targetCell.value) || 0;
+                        }
+                        return 0;
+                    });
+
+                    try {
+                        // eslint-disable-next-line no-eval
+                        const result = eval(formula);
+                        // Ensures result is a decimal with max 2 places if a fraction
+                        this.value = isFinite(result) ? result.toFixed(2) : 'ERROR'; 
+                    } catch (e) {
+                        this.value = 'ERROR';
+                    }
+                } else {
+                    const numValue = parseFloat(content);
+                    this.value = isNa
