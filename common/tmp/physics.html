@@ -442,4 +442,299 @@ function tick(){
         node.orbit.omega += (Math.sign(node.orbit.omega||1) * targetOmega - node.orbit.omega) * 0.06;
         node.orbit.theta += node.orbit.omega;
         node.xFloat = cx + node.orbit.radiusCurrent * Math.cos(node.orbit.theta);
-        node.yFloat = cy + node.orbi
+        node.yFloat = cy + node.orbit.radiusCurrent * Math.sin(node.orbit.theta);
+
+        // core absorption
+        const dx = (m.x + 0.5) - node.xFloat;
+        const dy = (m.y + 0.5) - node.yFloat;
+        const coreDist = Math.sqrt(dx*dx + dy*dy);
+        if(coreDist < 0.45){
+          toRemove.push(node);
+          m.strength += Math.max(0.01, node.value * 0.03);
+          m.range = Math.min(Math.max(m.range, m.orbits[m.orbits.length-1].radius + 1), 30);
+          m.orbits.forEach(o => o.occupants = o.occupants.filter(id => id !== node.id));
+          continue;
+        }
+        node.updateVisual();
+        continue;
+      }
+    }
+
+    // Non-orbiting behavior
+    if(node.props.magnetic && magnets.length){
+      // magnetic attraction & orbit capture
+      let best = null; let bestDist = Infinity;
+      for(const m of magnets){
+        const dx = (m.x + 0.5) - node.xFloat;
+        const dy = (m.y + 0.5) - node.yFloat;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if(d < bestDist && d <= m.range + 4){ bestDist = d; best = m; }
+      }
+      if(best){
+        const dxm = (best.x + 0.5) - node.xFloat;
+        const dym = (best.y + 0.5) - node.yFloat;
+        const dist = Math.sqrt(dxm*dxm + dym*dym) + 1e-6;
+        const nx = dxm / dist, ny = dym / dist;
+        const g = (best.strength * 0.6) / Math.pow(dist, best.falloff || 2.0);
+        node.vx += nx * g * 0.9; node.vy += ny * g * 0.9;
+
+        // nearest orbit detection
+        let nearest = null; let nearestDiff = Infinity;
+        best.orbits.forEach(o => { const diff = Math.abs(dist - o.radius); if(diff < nearestDiff){ nearestDiff = diff; nearest = o; } });
+
+        if(nearest){
+          const captureWindow = 0.6 + (0.25 * (1 / Math.max(0.5, node.props.speed)));
+          const within = nearestDiff < captureWindow;
+          const full = nearest.occupants.length >= nearest.capacity;
+          if(within && !full){
+            if(!nearest.occupants.includes(node.id)) nearest.occupants.push(node.id);
+            const cx = best.x + 0.5, cy = best.y + 0.5;
+            const theta = Math.atan2(node.yFloat - cy, node.xFloat - cx);
+            const tangential = (-node.vx * ny + node.vy * nx);
+            const radius = nearest.radius;
+            const omega = (radius > 0) ? (tangential / radius) : 0.08;
+            node.orbit = { magnetId: best.id, orbitIndex: nearest.index, radiusTarget: radius, radiusCurrent: dist, theta, omega: omega || 0.08 };
+            node.vx *= 0.18; node.vy *= 0.18;
+            node.updateVisual();
+            continue;
+          } else {
+            if(within && full){
+              const tangentX = -ny, tangentY = nx;
+              node.vx += tangentX * (-g * 1.2); node.vy += tangentY * (-g * 1.2);
+            }
+            best.orbits.forEach(o => o.occupants = o.occupants.filter(id => id !== node.id));
+          }
+        }
+        if(bestDist < 0.6){
+          toRemove.push(node);
+          best.strength += Math.max(0.01, node.value * 0.03);
+          best.range = Math.min(Math.max(best.range, best.orbits[best.orbits.length-1].radius + 1), 30);
+          best.orbits.forEach(o => o.occupants = o.occupants.filter(id => id !== node.id));
+          continue;
+        }
+        node.vx *= 0.995; node.vy *= 0.995;
+      }
+    } else {
+      // electrical (non-magnetic) nodes: gravity along trajectory & arrow/output handling
+      // gravity -> along current direction (or downward if zero)
+      const speed = Math.sqrt(node.vx*node.vx + node.vy*node.vy);
+      if(speed > 0){
+        const gx = node.vx / speed; const gy = node.vy / speed;
+        node.vx += gx * 0.03 * node.props.speed; node.vy += gy * 0.03 * node.props.speed;
+      } else {
+        node.vy += 0.05 * node.props.speed;
+      }
+
+      // discrete cell-based arrow/diode/splitter/output behavior
+      const tx = Math.max(0, Math.min(GRID_W-1, Math.floor(node.xFloat)));
+      const ty = Math.max(0, Math.min(GRID_H-1, Math.floor(node.yFloat)));
+      const ct = gridData[ty][tx].type;
+
+      if(ct === 'right'){ node.vx += 0.4; node.vy *= 0.98; }
+      else if(ct === 'left'){ node.vx -= 0.4; node.vy *= 0.98; }
+      else if(ct === 'up'){ node.vy -= 0.4; node.vx *= 0.98; }
+      else if(ct === 'down'){ node.vy += 0.4; node.vx *= 0.98; }
+      else if(ct === 'diode'){ // deterministic one-way: allow flow if heading matches nominal (right)
+        // simple diode: allow vx > 0 pass else reflect
+        if(node.vx < 0){ node.vx *= -0.4; node.vy *= 0.7; }
+      } else if(ct === 'split'){
+        // Splitter deterministic: clone into two deterministic directions (right + down)
+        // ensure we only split once per node per cell (use a small flag)
+        if(!node._splittingAt || node._splittingAt.x !== tx || node._splittingAt.y !== ty){
+          node._splittingAt = {x:tx,y:ty};
+          // create clones deterministically (no randomness)
+          const cloneA = new Node(tx,ty,{...node.props});
+          const cloneB = new Node(tx,ty,{...node.props});
+          cloneA.vx = node.vx + 0.3; cloneA.vy = node.vy * 0.9;
+          cloneB.vx = node.vx * 0.9; cloneB.vy = node.vy + 0.3;
+          nodes.push(cloneA); nodes.push(cloneB);
+        }
+      } else if(ct === 'output'){
+        // attract to center of cell
+        const cx = tx + 0.5, cy = ty + 0.5;
+        const dx = cx - node.xFloat, dy = cy - node.yFloat;
+        const dmag = Math.sqrt(dx*dx + dy*dy) + 1e-6;
+        node.vx += (dx/dmag) * 0.12; node.vy += (dy/dmag) * 0.12;
+      }
+
+    } // end electrical block
+
+    // integrate linear motion
+    const maxMv = 1.8;
+    node.vx = Math.max(-maxMv, Math.min(maxMv, node.vx));
+    node.vy = Math.max(-maxMv, Math.min(maxMv, node.vy));
+    node.xFloat += node.vx;
+    node.yFloat += node.vy;
+
+    // bounds kill
+    if(node.xFloat < 0 || node.xFloat >= GRID_W || node.yFloat < 0 || node.yFloat >= GRID_H){
+      toRemove.push(node); continue;
+    }
+
+    // wall collision (discrete)
+    const ntx = Math.floor(node.xFloat), nty = Math.floor(node.yFloat);
+    if(gridData[nty][ntx].type === 'wall'){
+      // bounce deterministically
+      node.vx *= -0.6; node.vy *= -0.6;
+      node.xFloat = node.xCell; node.yFloat = node.yCell;
+      node.updateVisual();
+      continue;
+    }
+
+    // electrical merging: if non-magnetic and another non-magnetic occupies same floored cell => merge
+    if(!node.props.magnetic){
+      const other = nodes.find(n => n !== node && Math.floor(n.xFloat) === Math.floor(node.xFloat) && Math.floor(n.yFloat) === Math.floor(node.yFloat) && n.active && !n.props.magnetic);
+      if(other){
+        other.value += node.value;
+        other.energy = Math.max(other.energy, node.energy);
+        other.updateVisual();
+        toRemove.push(node);
+        continue;
+      }
+      // output cell finalized removal when near center
+      if(gridData[nty][ntx].type === 'output'){
+        const cx = ntx + 0.5, cy = nty + 0.5; const dxo = node.xFloat - cx, dyo = node.yFloat - cy;
+        if(Math.sqrt(dxo*dxo + dyo*dyo) < 0.25){
+          toRemove.push(node); continue;
+        }
+      }
+    }
+
+    // update node energy & heat decay
+    node.energy = Math.min(3, Math.sqrt(node.vx*node.vx + node.vy*node.vy) * node.props.speed + node.energy * 0.05);
+    node.collisionHeat = Math.max(0, node.collisionHeat - 0.02);
+    // if collisionHeat too high -> node breaks/dies
+    if(node.collisionHeat > 12){
+      toRemove.push(node); continue;
+    }
+
+    node.updateVisual();
+  }
+
+  // cleanup removals
+  if(toRemove.length){
+    toRemove.forEach(n => { n.destroy(); nodes = nodes.filter(nn => nn !== n); });
+  }
+}
+
+/* ========== Collision resolution (deterministic) ========== */
+function resolveCollision(a,b,toRemove){
+  if(!a.active || !b.active) return;
+  // quick distance in pixel-space
+  const ax = a.xFloat * CELL_SIZE + CELL_SIZE/2, ay = a.yFloat * CELL_SIZE + CELL_SIZE/2;
+  const bx = b.xFloat * CELL_SIZE + CELL_SIZE/2, by = b.yFloat * CELL_SIZE + CELL_SIZE/2;
+  const dx = bx - ax, dy = by - ay;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const minDist = 18; // pixel threshold
+  if(dist >= minDist || dist === 0) return;
+
+  // collision normal (pixel)
+  const nx = dx / dist, ny = dy / dist;
+  const overlap = minDist - dist;
+  // push apart in float-space
+  a.xFloat -= (nx * overlap * 0.5) / CELL_SIZE;
+  a.yFloat -= (ny * overlap * 0.5) / CELL_SIZE;
+  b.xFloat += (nx * overlap * 0.5) / CELL_SIZE;
+  b.yFloat += (ny * overlap * 0.5) / CELL_SIZE;
+
+  // exchange velocities (simple elastic-ish)
+  const avx = a.vx, avy = a.vy;
+  a.vx = b.vx * 0.9; a.vy = b.vy * 0.9;
+  b.vx = avx * 0.9; b.vy = avy * 0.9;
+
+  // add collision heat proportional to impulse
+  const impulse = Math.sqrt((a.vx-avx)*(a.vx-avx) + (a.vy-avy)*(a.vy-avy));
+  a.collisionHeat += impulse * 2.0; b.collisionHeat += impulse * 2.0;
+
+  // LTR drift ONLY on collision (electrical nodes)
+  const drift = 0.05;
+  a.vx += drift; b.vx -= drift;
+
+  // merging conditions: deterministic
+  if(!a.props.magnetic && !b.props.magnetic){
+    // merge if both speeds small OR if one has much higher energy
+    const speedA = Math.sqrt(a.vx*a.vx + a.vy*a.vy);
+    const speedB = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
+    if((speedA < 0.4 && speedB < 0.4) || Math.abs(a.energy - b.energy) > 1.2){
+      // deterministic rule: node with higher energy absorbs the other
+      if(a.energy >= b.energy){ a.value += b.value; a.energy = Math.max(a.energy, b.energy); b.active = false; }
+      else { b.value += a.value; b.energy = Math.max(a.energy, b.energy); a.active = false; }
+    }
+  }
+
+  // angular perturbation for magnetic nodes if collide (can knock out of orbit)
+  if(a.props.magnetic && a.orbit){ a.orbit.theta += 0.08; a.orbit.omega *= 1.05; }
+  if(b.props.magnetic && b.orbit){ b.orbit.theta -= 0.08; b.orbit.omega *= 1.05; }
+}
+
+/* ========== Animation loop ========== */
+function loop(){
+  // update magnets orbital rings when slider changed (if present)
+  // (there's a magStrength input controlling global strength; we simple map it to magnets)
+  magnets.forEach(m => { m.strength = parseFloat(magStrengthInput.value); });
+
+  if(running) tick();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ========== Persistence: export / import ========== */
+exportBtn.onclick = ()=>{
+  const payload = {
+    gridData: gridData.map(row => row.map(c => ({type:c.type,config:c.config}))),
+    magnets: magnets.map(m => ({x:m.x,y:m.y,strength:m.strength,orbitSpacing:m.orbitSpacing,range:m.range})),
+    nodes: nodes.map(n => ({xFloat:n.xFloat,yFloat:n.yFloat,vx:n.vx,vy:n.vy,props:n.props,value:n.value}))
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'stage.json'; a.click(); URL.revokeObjectURL(url);
+};
+
+importBtn.onclick = ()=> importFile.click();
+importFile.onchange = (ev)=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = (e)=> {
+    try{
+      const p = JSON.parse(e.target.result);
+      // load grid
+      for(let y=0;y<GRID_H;y++){
+        for(let x=0;x<GRID_W;x++){
+          const cell = gridData[y][x]; const src = p.gridData?.[y]?.[x];
+          if(src){ cell.type = src.type || 'empty'; cell.config = src.config || null; cell.element.className = cell.type === 'empty' ? 'cell empty' : 'cell type-' + cell.type; if(cell.type==='emitter') cell.element.textContent='●'; else if(cell.type==='output') cell.element.textContent='★'; else cell.element.textContent=''; }
+        }
+      }
+      // clear existing magnets
+      magnets.forEach(m=> m.element.remove()); magnets = [];
+      (p.magnets || []).forEach(ms => createMagnet(ms.x, ms.y, {strength: ms.strength, orbitSpacing: ms.orbitSpacing, range: ms.range}));
+      // remove existing nodes
+      nodes.forEach(n=> n.destroy()); nodes=[];
+      (p.nodes||[]).forEach(nn => {
+        const node = new Node(0,0,nn.props); node.xFloat = nn.xFloat; node.yFloat = nn.yFloat; node.vx = nn.vx; node.vy = nn.vy; node.value = nn.value; nodes.push(node);
+      });
+      alert('Imported stage');
+    }catch(err){ alert('Import failed: '+err.message); }
+  };
+  reader.readAsText(f);
+};
+
+/* ========== Helper: place a sample stage for convenience ========== */
+(function placeSample(){
+  // emitter left center
+  const ex = 2, ey = Math.floor(GRID_H/2);
+  gridData[ey][ex].type='emitter'; gridData[ey][ex].config={ speed:1.0, magnetic:true, interval: parseInt(spawnGlobalInput.value) };
+  gridData[ey][ex].element.className='cell type-emitter'; gridData[ey][ex].element.textContent='●';
+
+  // magnet center
+  const mx = Math.floor(GRID_W/2), my = Math.floor(GRID_H/2);
+  gridData[my][mx].type='attractor'; gridData[my][mx].element.className='cell type-attractor'; gridData[my][mx].element.textContent='';
+  createMagnet(mx,my,{ strength: parseFloat(magStrengthInput.value), orbitSpacing: 2.0, range:12 });
+
+  // output right
+  const ox = GRID_W - 3, oy = Math.floor(GRID_H/2) + 2;
+  gridData[oy][ox].type='output'; gridData[oy][ox].element.className='cell type-output'; gridData[oy][ox].element.textContent='★';
+})();
+
+</script>
+</body>
+</html>
