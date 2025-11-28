@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Interactive Orbit Grid — Full</title>
+<style>
+:root{
+  --cols: 24; --rows: 18; --cell: 32px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#071427;color:#dbeafe}
+.app{display:flex;gap:12px;padding:12px;height:100%}
+#controls{width:360px;background:linear-gradient(180deg,#07111a,#061826);border-radius:10px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6)}
+h2{margin:0 0 8px 0;font-size:16px}
+.tools{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.tool-btn{width:72px;height:56px;border-radius:8px;background:#0f1724;border:1px solid rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#cfe7ff;font-size:13px}
+.tool-btn.selected{box-shadow:0 6px 18px rgba(96,165,250,0.06);outline:2px solid rgba(96,165,250,0.16)}
+.row{display:flex;align-items:center;gap:8px;margin:8px 0}
+label{width:140px;color:#9fb0cc;font-size:13px}
+.small{font-size:12px;color:#9fb0cc}
+#stage{position:relative;width:calc(var(--cols) * var(--cell));height:calc(var(--rows) * var(--cell));border-radius:8px;background:
+linear-gradient(transparent calc(var(--cell) - 1px), rgba(255,255,255,0.02) 1px),
+linear-gradient(90deg, transparent calc(var(--cell) - 1px), rgba(255,255,255,0.02) 1px);
+background-size: var(--cell) var(--cell), var(--cell) var(--cell);box-shadow:0 12px 40px rgba(0,0,0,0.6);overflow:hidden}
+#grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(var(--cols), var(--cell));grid-template-rows:repeat(var(--rows), var(--cell));z-index:1}
+.cell{width:var(--cell);height:var(--cell);box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-size:12px;cursor:crosshair;color:#04121a}
+.cell.empty{background:transparent}
+.cell.type-wall{background:#334155;border-radius:4px}
+.cell.type-emitter{background:#10b981;border-radius:4px;color:#02120a;font-weight:700}
+.cell.type-attractor{background:#ef4444;border-radius:4px;color:white;font-weight:700}
+.cell.type-right,.cell.type-left,.cell.type-up,.cell.type-down{background:#1e293b;border-radius:4px;color:#dbeafe;font-weight:700}
+.cell.type-output{background:#f59e0b;border-radius:4px;color:#221a00;font-weight:700}
+.cell.type-diode{background:#7c3aed;border-radius:4px;color:white;font-weight:700}
+.cell.type-split{background:#db2777;border-radius:4px;color:white;font-weight:700}
+
+/* magnet DOM */
+.magnet{position:absolute;width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#fff;background:#ef4444;z-index:40;pointer-events:auto}
+.magnet .ring{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;opacity:0.12}
+
+/* node DOM */
+.node{position:absolute;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#111;box-shadow:0 3px 10px rgba(0,0,0,0.45);z-index:30;pointer-events:none;will-change:transform;transition:transform 0s linear}
+.node .heat{position:absolute;inset:0;border-radius:50%;mix-blend-mode:multiply;opacity:0.6}
+
+/* color helpers will be applied inline via style */
+.footer{position:fixed;bottom:10px;left:12px;color:#7f9bb3;font-size:12px}
+
+/* small dialog */
+.dialog{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#071727;border-radius:8px;padding:12px;box-shadow:0 12px 36px rgba(0,0,0,0.6);z-index:200}
+.input{width:120px;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:#0f1724;color:#dbeafe}
+.btn{padding:6px 10px;border-radius:6px;background:#0f1724;border:1px solid rgba(255,255,255,0.04);color:#dbeafe;cursor:pointer;margin-left:8px}
+.kv{display:flex;gap:8px;align-items:center;margin:6px 0}
+.layer-toggle{display:flex;gap:6px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="controls">
+    <h2>Interactive Orbit Grid — Full</h2>
+
+    <div class="tools" id="tools">
+      <button class="tool-btn selected" data-tool="wall">Wall</button>
+      <button class="tool-btn" data-tool="emitter">Emitter</button>
+      <button class="tool-btn" data-tool="attractor">Magnet</button>
+      <button class="tool-btn" data-tool="right">→</button>
+      <button class="tool-btn" data-tool="left">←</button>
+      <button class="tool-btn" data-tool="up">↑</button>
+      <button class="tool-btn" data-tool="down">↓</button>
+      <button class="tool-btn" data-tool="output">Output</button>
+      <button class="tool-btn" data-tool="diode">Diode</button>
+      <button class="tool-btn" data-tool="split">Splitter</button>
+      <button class="tool-btn" data-tool="erase">Erase</button>
+    </div>
+
+    <div class="row">
+      <label>Simulation</label>
+      <div style="display:flex;gap:8px">
+        <button id="btn-start" class="btn">Start</button>
+        <button id="btn-stop" class="btn">Stop</button>
+        <button id="btn-step" class="btn">Step</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>Global spawn interval (frames)</label>
+      <input id="spawnGlobal" class="input" type="number" min="1" value="20" />
+      <span class="small">Per-emitter override available</span>
+    </div>
+
+    <div class="row">
+      <label>Default node speed</label>
+      <input id="defaultSpeed" class="input" type="number" step="0.1" min="0.2" value="1.0" />
+    </div>
+
+    <div class="row">
+      <label>Magnet strength (global)</label>
+      <input id="magStrength" class="input" type="number" min="1" max="50" value="10" />
+    </div>
+
+    <div class="row layer-toggle">
+      <label>Layer</label>
+      <button id="layer-bg" class="btn">Background</button>
+      <button id="layer-ov" class="btn">Overlay</button>
+    </div>
+
+    <div style="margin-top:10px" class="small">Double-click an emitter cell to edit its speed, magnetic setting, or spawn interval. Use Export/Import to save stages.</div>
+
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button id="exportBtn" class="btn">Export</button>
+      <button id="importBtn" class="btn">Import</button>
+      <input id="importFile" type="file" style="display:none" />
+    </div>
+
+  </div>
+
+  <div id="stage" aria-label="Stage">
+    <div id="grid"></div>
+  </div>
+</div>
+
+<div class="footer">Simulator starts STOPPED. Non-magnetic nodes are electrical (merge + routed). LTR drift happens only in collisions.</div>
+
+<!-- per-emitter dialog -->
+<div id="emitterDialog" class="dialog" style="display:none">
+  <div style="font-weight:700;margin-bottom:6px">Emitter Settings</div>
+  <div class="kv"><label class="small">Speed</label><input id="dlgSpeed" class="input" type="number" step="0.1" min="0.1" /></div>
+  <div class="kv"><label class="small">Magnetic?</label><input id="dlgMag" type="checkbox" /></div>
+  <div class="kv"><label class="small">Interval (frames)</label><input id="dlgInterval" class="input" type="number" min="1" /></div>
+  <div style="margin-top:8px"><button id="dlgOk" class="btn">OK</button><button id="dlgCancel" class="btn">Cancel</button></div>
+</div>
+
+<script>
+/* ===========================
+   Config & State
+   =========================== */
+const GRID_W = 24, GRID_H = 18, CELL_SIZE = 32;
+const gridEl = document.getElementById('grid');
+gridEl.style.gridTemplateColumns = `repeat(${GRID_W}, ${CELL_SIZE}px)`;
+gridEl.style.gridTemplateRows = `repeat(${GRID_H}, ${CELL_SIZE}px)`;
+
+let gridData = []; // { type, element, config, layer }
+let nodes = [];    // Node instances
+let magnets = [];  // magnets registry
+let running = false; // start stopped
+let frame = 0;
+let selectedTool = 'wall';
+let painting = false;
+let activeLayer = 'bg'; // bg or ov
+
+// UI refs
+const toolsEl = document.getElementById('tools');
+const startBtn = document.getElementById('btn-start');
+const stopBtn = document.getElementById('btn-stop');
+const stepBtn  = document.getElementById('btn-step');
+const spawnGlobalInput = document.getElementById('spawnGlobal');
+const defaultSpeedInput = document.getElementById('defaultSpeed');
+const magStrengthInput = document.getElementById('magStrength');
+const layerBgBtn = document.getElementById('layer-bg');
+const layerOvBtn = document.getElementById('layer-ov');
+const exportBtn = document.getElementById('exportBtn');
+const importBtn = document.getElementById('importBtn');
+const importFile = document.getElementById('importFile');
+
+startBtn.onclick = ()=> running = true;
+stopBtn.onclick = ()=> running = false;
+stepBtn.onclick = ()=> { tick(); };
+
+layerBgBtn.onclick = ()=> { activeLayer='bg'; layerBgBtn.disabled = true; layerOvBtn.disabled = false; };
+layerOvBtn.onclick = ()=> { activeLayer='ov'; layerOvBtn.disabled = true; layerBgBtn.disabled = false; };
+layerBgBtn.disabled = true; // default
+
+/* Utility: palindromes */
+function generatePalindromes(count=8){ return [1,3,5,7,11,33,55,77].slice(0,count); }
+
+/* ========== Build grid cells (two-layer aware) ========== */
+for(let y=0;y<GRID_H;y++){
+  const row = [];
+  for(let x=0;x<GRID_W;x++){
+    const cell = document.createElement('div');
+    cell.className = 'cell empty';
+    cell.dataset.x = x; cell.dataset.y = y;
+    // mouse handlers
+    cell.onmousedown = ()=> { painting = true; applyToolToCell(x,y); };
+    cell.onmouseenter = ()=> { if(painting) applyToolToCell(x,y); };
+    cell.onmouseup = ()=> { painting = false; };
+    cell.ondblclick = ()=> { if(gridData[y][x].type === 'emitter') openEmitterDialog(x,y); };
+    gridEl.appendChild(cell);
+    row.push({ type:'empty', element:cell, config:null, layer:'bg' });
+  }
+  gridData.push(row);
+}
+document.addEventListener('mouseup', ()=> painting=false);
+
+/* Tools selection */
+toolsEl.addEventListener('click', (e)=>{
+  const btn = e.target.closest('.tool-btn'); if(!btn) return;
+  document.querySelectorAll('.tool-btn').forEach(b=>b.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedTool = btn.dataset.tool;
+});
+
+/* ========== Magnet helpers (palindrome capacity, orbits) ========== */
+function createMagnet(x,y,opts={}){
+  const m = {
+    id: Math.random().toString(36).slice(2,9),
+    x, y,
+    strength: opts.strength ?? parseFloat(magStrengthInput.value),
+    falloff: opts.falloff ?? 2.0,
+    orbitSpacing: opts.orbitSpacing ?? parseFloat(document.getElementById('magStrength').value) ? parseFloat(document.getElementById('magStrength').value) * 0.0 + 2.0 : 2.0,
+    orbits: [],
+    range: opts.range ?? 12,
+    element: null
+  };
+  // orbitSpacing override from slider
+  m.orbitSpacing = opts.orbitSpacing ?? parseFloat(document.getElementById('orbitSpacing')?.value || 2.0);
+  // build orbits
+  generateOrbits(m, 6);
+  // DOM marker
+  const el = document.createElement('div');
+  el.className = 'magnet';
+  el.textContent = 'M';
+  el.style.left = `${(x * CELL_SIZE) + (CELL_SIZE/2) - 10}px`;
+  el.style.top  = `${(y * CELL_SIZE) + (CELL_SIZE/2) - 10}px`;
+  // rings
+  m.orbits.forEach(o=>{
+    const r = document.createElement('div');
+    r.className = 'ring';
+    r.style.width = `${o.radius * CELL_SIZE * 2}px`;
+    r.style.height = `${o.radius * CELL_SIZE * 2}px`;
+    r.style.border = '1px solid rgba(239,68,68,0.12)';
+    el.appendChild(r);
+  });
+  m.element = el;
+  document.getElementById('stage').appendChild(el);
+  magnets.push(m);
+  return m;
+}
+
+function generateOrbits(magnet, count=6){
+  const pal = generatePalindromes(count);
+  magnet.orbits = [];
+  for(let i=0;i<count;i++){
+    magnet.orbits.push({ index:i, radius: (i+1) * magnet.orbitSpacing, capacity: pal[i % pal.length] || 7, occupants: [] });
+  }
+}
+
+function removeMagnetAt(x,y){
+  const found = magnets.find(m => m.x===x && m.y===y);
+  if(found){ found.element.remove(); magnets = magnets.filter(mm => mm !== found); }
+}
+
+/* ========== Apply tool to cell ========== */
+function applyToolToCell(x,y){
+  const cell = gridData[y][x];
+  const el = cell.element;
+  // Erase
+  if(selectedTool === 'erase'){
+    if(cell.type === 'attractor') removeMagnetAt(x,y);
+    cell.type = 'empty'; cell.config = null; el.className = 'cell empty'; el.textContent = '';
+    return;
+  }
+  if(selectedTool === 'wall'){
+    if(cell.type === 'attractor') removeMagnetAt(x,y);
+    cell.type='wall'; cell.config=null; el.className='cell type-wall'; el.textContent='';
+    return;
+  }
+  if(selectedTool === 'emitter'){
+    cell.type='emitter';
+    cell.config = { speed: parseFloat(defaultSpeedInput.value), magnetic: true, interval: parseInt(spawnGlobalInput.value) };
+    el.className='cell type-emitter'; el.textContent='●';
+    return;
+  }
+  if(selectedTool === 'attractor'){
+    if(cell.type === 'attractor'){ removeMagnetAt(x,y); cell.type='empty'; cell.element.className='cell empty'; cell.element.textContent=''; return; }
+    cell.type='attractor'; cell.config=null; el.className='cell type-attractor'; el.textContent='';
+    createMagnet(x,y,{ strength: parseFloat(magStrengthInput.value), orbitSpacing: parseFloat(document.getElementById('orbitSpacing')?.value || 2.0), range: 12 });
+    return;
+  }
+  if(['right','left','up','down'].includes(selectedTool)){
+    cell.type = selectedTool; cell.config=null; el.className = `cell type-${selectedTool}`; el.textContent = selectedTool === 'right' ? '→' : selectedTool === 'left' ? '←' : selectedTool === 'up' ? '↑' : '↓';
+    return;
+  }
+  if(selectedTool === 'output'){
+    cell.type='output'; cell.config=null; el.className='cell type-output'; el.textContent='★'; return;
+  }
+  if(selectedTool === 'diode'){
+    cell.type='diode'; cell.config={dir:'right'}; el.className='cell type-diode'; el.textContent='▶'; return;
+  }
+  if(selectedTool === 'split'){
+    cell.type='split'; cell.config={pattern:'LR'}; el.className='cell type-split'; el.textContent='Y'; return;
+  }
+}
+
+/* ========== Emitter dialog (per-emitter settings) ========== */
+const emitterDialog = document.getElementById('emitterDialog');
+const dlgSpeed = document.getElementById('dlgSpeed');
+const dlgMag = document.getElementById('dlgMag');
+const dlgInterval = document.getElementById('dlgInterval');
+let dlgTarget = null;
+document.getElementById('dlgOk').onclick = ()=>{
+  if(!dlgTarget) { emitterDialog.style.display='none'; return; }
+  const {x,y} = dlgTarget;
+  gridData[y][x].config = { speed: parseFloat(dlgSpeed.value), magnetic: dlgMag.checked, interval: parseInt(dlgInterval.value) };
+  emitterDialog.style.display='none';
+};
+document.getElementById('dlgCancel').onclick = ()=> { emitterDialog.style.display='none'; };
+
+function openEmitterDialog(x,y){
+  const cell = gridData[y][x];
+  if(cell.type !== 'emitter') return;
+  dlgTarget = {x,y};
+  const cfg = cell.config || { speed: parseFloat(defaultSpeedInput.value), magnetic: true, interval: parseInt(spawnGlobalInput.value) };
+  dlgSpeed.value = cfg.speed; dlgMag.checked = cfg.magnetic; dlgInterval.value = cfg.interval;
+  emitterDialog.style.display='block';
+}
+
+/* ========== Node class (absolute DOM) ========== */
+class Node {
+  constructor(xCell,yCell,config){
+    this.xCell = xCell|0; this.yCell = yCell|0;
+    this.xFloat = this.xCell; this.yFloat = this.yCell;
+    this.props = Object.assign({ speed:1.0, magnetic:true, collision:'merge' }, config || {});
+    this.vx = 0; this.vy = 0;
+    this.id = Math.random().toString(36).slice(2,9);
+    this.active = true; this.value = 1;
+    this.orbit = null; // orbital state {magnetId,orbitIndex,radiusTarget, radiusCurrent, theta, omega}
+    this.energy = 0.0; // movement energy
+    this.collisionHeat = 0.0;
+    this.element = document.createElement('div');
+    this.element.className = 'node';
+    this.heatEl = document.createElement('div'); this.heatEl.className='heat';
+    this.element.appendChild(this.heatEl);
+    document.getElementById('stage').appendChild(this.element);
+    this.updateVisual(true);
+  }
+
+  updateVisual(force=false){
+    const left = (this.xFloat * CELL_SIZE) + (CELL_SIZE/2);
+    const top  = (this.yFloat * CELL_SIZE) + (CELL_SIZE/2);
+    this.element.style.transform = `translate3d(${left}px, ${top}px, 0) translate(-50%,-50%)`;
+    // color by energy/charge: map energy (0..3) to color gradient blue (low) -> yellow (mid) -> red (hot)
+    const e = Math.max(0, Math.min(3, this.energy));
+    let color;
+    if(e < 1){ // bluish to cyan
+      const t = e/1;
+      color = `rgb(${Math.round(80 + 175*t)}, ${Math.round(160 + 60*t)}, ${Math.round(220 - 100*t)})`;
+    } else if(e < 2){
+      const t = (e-1)/1;
+      color = `rgb(${Math.round(255 * t + 80*(1-t))}, ${Math.round(200 * (1-t) + 220 * t)}, ${30})`;
+    } else {
+      const t = (e-2)/1;
+      color = `rgb(255, ${Math.round(150*(1-t)+80*t)}, ${Math.round(50*(1-t))})`;
+    }
+    this.element.style.background = color;
+    // heat overlay intensity
+    const heat = Math.min(1, this.collisionHeat / 8);
+    this.heatEl.style.background = `rgba(255,80,20,${heat})`;
+    this.element.textContent = this.value > 1 ? this.value : '';
+  }
+
+  destroy(){
+    this.active = false;
+    this.element.remove();
+  }
+}
+
+/* ========== Spawning deterministic (emitters) ========== */
+function spawnFromEmitters(){
+  for(let y=0;y<GRID_H;y++){
+    for(let x=0;x<GRID_W;x++){
+      const cell = gridData[y][x];
+      if(cell.type === 'emitter'){
+        // check spawn interval from cell.config or global
+        const cfg = cell.config || { speed: parseFloat(defaultSpeedInput.value), magnetic: true, interval: parseInt(spawnGlobalInput.value) };
+        const interval = cfg.interval ?? parseInt(spawnGlobalInput.value);
+        if(frame % interval !== 0) continue;
+
+        // occupancy check (no two spawn on same floored cell)
+        const occupied = nodes.find(n => Math.floor(n.xFloat) === x && Math.floor(n.yFloat) === y && n.active);
+        if(!occupied){
+          const n = new Node(x,y,{ speed: cfg.speed, magnetic: cfg.magnetic });
+          // deterministic slight bias based on emitter coords to give deterministic variety (no randomness)
+          // use a fixed small offset based on coordinates (keeps deterministic)
+          n.vx = (x % 3 - 1) * 0.02 * cfg.speed;
+          n.vy = (y % 2) * 0.02 * cfg.speed;
+          nodes.push(n);
+        }
+      }
+    }
+  }
+}
+
+/* ========== Physics tick (full) ========== */
+
+function tick(){
+  frame++;
+
+  // spawn
+  if(running) spawnFromEmitters();
+
+  const toRemove = [];
+
+  // collision pass preparation: broad-phase grid buckets (simple)
+  const buckets = {};
+  function bucketKey(x,y){ return `${x},${y}`; }
+  nodes.forEach(n => {
+    if(!n.active) return;
+    const bx = Math.floor(n.xFloat), by = Math.floor(n.yFloat);
+    const k = bucketKey(bx,by);
+    buckets[k] = buckets[k] || [];
+    buckets[k].push(n);
+  });
+
+  // Resolve collisions inside each bucket
+  Object.values(buckets).forEach(bucket => {
+    for(let i=0;i<bucket.length;i++){
+      for(let j=i+1;j<bucket.length;j++){
+        resolveCollision(bucket[i], bucket[j], toRemove);
+      }
+    }
+  });
+
+  // per-node updates
+  for(const node of nodes.slice()){
+    if(!node.active) continue;
+
+    // Orbit handling for magnetic nodes
+    if(node.orbit){
+      const m = magnets.find(mm => mm.id === node.orbit.magnetId);
+      if(!m){
+        // magnet removed: release to linear
+        const tangSpeed = node.orbit.omega * node.orbit.radiusCurrent;
+        const tx = -Math.sin(node.orbit.theta), ty = Math.cos(node.orbit.theta);
+        node.vx = tx * tangSpeed; node.vy = ty * tangSpeed;
+        node.orbit = null;
+      } else {
+        const cx = m.x + 0.5, cy = m.y + 0.5;
+        const r = node.orbit.radiusCurrent;
+        const rErr = node.orbit.radiusTarget - r;
+        node.orbit.radiusCurrent = r + rErr * 0.22;
+        const targetOmega = 0.12 + (0.02 * (1 / Math.max(0.2, node.props.speed)));
+        node.orbit.omega += (Math.sign(node.orbit.omega||1) * targetOmega - node.orbit.omega) * 0.06;
+        node.orbit.theta += node.orbit.omega;
+        node.xFloat = cx + node.orbit.radiusCurrent * Math.cos(node.orbit.theta);
+        node.yFloat = cy + node.orbi
