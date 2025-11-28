@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Semantic Gravity: Deterministic Automata</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background-color: #0f0f13;
+            color: #e0e0e0;
+            overflow: hidden;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a20; }
+        ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
+
+        .grid-container {
+            display: grid;
+            gap: 1px;
+            background-color: #1a1a20;
+            padding: 2px;
+            user-select: none;
+        }
+
+        .cell {
+            width: 40px;
+            height: 40px;
+            background-color: #1e1e24;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.1s;
+            position: relative;
+            border-radius: 2px;
+        }
+
+        .cell:hover {
+            border: 1px solid #555;
+            z-index: 10;
+        }
+
+        .cell.active-type {
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        /* Cell Types Visuals */
+        .type-void { background-color: #1e1e24; }
+        .type-wall { background-color: #4b5563; border: 1px solid #374151; }
+        .type-emitter { background-color: #10b981; color: #000; font-weight: bold; box-shadow: 0 0 10px #10b98144; }
+        .type-right { background-color: #3b82f6; color: white; }
+        .type-left { background-color: #3b82f6; color: white; }
+        .type-down { background-color: #3b82f6; color: white; }
+        .type-split { background-color: #ec4899; color: white; }
+        .type-merge { background-color: #8b5cf6; color: white; border: 1px solid #7c3aed; }
+        .type-output { background-color: #f59e0b; color: black; font-weight: bold; }
+
+        /* The Node (Data Packet) */
+        .node {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: radial-gradient(circle, #fff 30%, #60a5fa 100%);
+            border-radius: 50%;
+            box-shadow: 0 0 12px #60a5fa;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #000;
+            font-weight: bold;
+            transition: transform 0.15s linear, opacity 0.2s;
+            pointer-events: none;
+        }
+        
+        .node-merged {
+            background: radial-gradient(circle, #fff 30%, #a78bfa 100%);
+            box-shadow: 0 0 15px #8b5cf6;
+        }
+
+        .controls {
+            background: #18181b;
+            border-right: 1px solid #27272a;
+        }
+
+        .tool-btn {
+            transition: all 0.2s;
+        }
+        .tool-btn:hover {
+            background-color: #27272a;
+        }
+        .tool-btn.selected {
+            background-color: #3b82f6;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        #log-area {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        
+        select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+            appearance: none;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="h-14 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-4 z-20 shadow-lg">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded bg-blue-500/10 flex items-center justify-center text-blue-500 text-xl border border-blue-500/20">❖</div>
+            <div>
+                <h1 class="font-bold text-sm tracking-wide text-zinc-200 leading-none">SEMANTIC GRAVITY</h1>
+                <span class="text-[10px] text-zinc-500 uppercase tracking-wider">Deterministic Engine</span>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <!-- Circuit Selector -->
+            <div class="relative group">
+                <select id="circuit-select" onchange="loadCircuit(this.value)" class="bg-zinc-800 text-xs text-zinc-300 border border-zinc-700 rounded py-1.5 pl-3 pr-8 focus:outline-none focus:border-blue-500 cursor-pointer hover:bg-zinc-750 transition">
+                    <option value="basic">Demo: Basic Merge</option>
+                    <option value="plinko">Demo: Plinko Probability</option>
+                    <option value="race">Demo: Data Race</option>
+                    <option value="jam">Demo: Traffic Jam</option>
+                    <option value="adder">Demo: Simple Adder</option>
+                </select>
+            </div>
+
+            <div class="h-4 w-px bg-zinc-700 mx-1"></div>
+
+            <button onclick="clearGrid()" class="text-xs bg-zinc-800 hover:bg-red-900/30 hover:text-red-400 text-zinc-400 px-3 py-1.5 rounded border border-zinc-700 transition">
+                Clear Grid
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Toolbar -->
+        <aside class="controls w-64 flex flex-col p-4 gap-4 overflow-y-auto z-10">
+            
+            <div class="p-3 bg-zinc-900 rounded border border-zinc-800 shadow-sm">
+                <h2 class="text-[10px] uppercase text-zinc-500 font-bold mb-2 tracking-wider">Simulation Control</h2>
+                <div class="flex gap-2 mb-3">
+                    <button id="btn-play" onclick="togglePlay()" class="flex-1 bg-green-600 hover:bg-green-500 text-white p-2 rounded text-xs font-bold transition shadow-lg shadow-green-900/20 flex items-center justify-center gap-1">
+                        <span>▶</span> Run
+                    </button>
+                    <button onclick="step()" class="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white p-2 rounded text-xs transition font-bold border border-zinc-600">Step ❯</button>
+                    <button onclick="resetSimulation()" class="bg-zinc-700 hover:bg-zinc-600 text-white px-3 rounded text-xs transition border border-zinc-600 font-bold">↺</button>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <div class="flex justify-between text-[10px] text-zinc-500 font-medium">
+                        <span>SLOW</span>
+                        <span id="tick-display" class="text-blue-400">150ms</span>
+                        <span>FAST</span>
+                    </div>
+                    <input type="range" min="50" max="1000" value="150" class="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500" oninput="updateSpeed(this.value)">
+                </div>
+            </div>
+
+            <div class="flex-1">
+                <h2 class="text-[10px] uppercase text-zinc-500 font-bold mb-2 tracking-wider">Logic Gates</h2>
+                <div class="grid grid-cols-2 gap-2" id="tools-container">
+                    <!-- Tools generated by JS -->
+                </div>
+            </div>
+
+            <div class="bg-black/40 rounded p-2 h-40 overflow-hidden flex flex-col border border-zinc-800">
+                <div class="text-[10px] text-zinc-500 font-bold border-b border-zinc-800 pb-1 mb-1 flex justify-between tracking-wider">
+                    <span>TERMINAL</span>
+                    <span id="node-count" class="text-zinc-400">0 Nodes</span>
+                </div>
+                <div id="log-area" class="overflow-y-auto font-mono space-y-1 pr-1">
+                    <div class="text-green-500 text-[10px]">>> System Initialized</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Grid Area -->
+        <main class="flex-1 bg-zinc-950 relative overflow-auto flex items-center justify-center p-8" id="main-area">
+            <div id="grid" class="grid-container shadow-2xl shadow-black border border-zinc-800"></div>
+        </main>
+
+    </div>
+
+<script>
+    // --- Configuration ---
+    const GRID_W = 20;
+    const GRID_H = 15;
+    const CELL_SIZE = 40;
+    
+    // --- State ---
+    let gridData = []; // Stores cell types and metadata
+    let nodes = []; // Active moving data packets
+    let isRunning = false;
+    let tickSpeed = 150;
+    let tickInterval;
+    let selectedTool = 'wall';
+    let stepCount = 0;
+
+    // --- Cell Definitions ---
+    const TOOLS = {
+        'void': { label: 'Eraser', icon: '', color: 'bg-zinc-800 hover:bg-zinc-700' },
+        'wall': { label: 'Block', icon: '▒', color: 'bg-gray-600' },
+        'emitter': { label: 'Emitter', icon: '●', color: 'bg-emerald-500' },
+        'right': { label: 'Right', icon: '→', color: 'bg-blue-600' },
+        'left': { label: 'Left', icon: '←', color: 'bg-blue-600' },
+        'down': { label: 'Down', icon: '↓', color: 'bg-blue-600' },
+        'split': { label: 'Split', icon: 'Y', color: 'bg-pink-500' }, // Sends left AND right
+        'merge': { label: 'Merge', icon: '⨁', color: 'bg-purple-500' }, // Adds values
+        'output': { label: 'Output', icon: '★', color: 'bg-amber-500' }
+    };
+
+    // --- Circuit Presets ---
+    const CIRCUITS = {
+        'basic': [
+            {x:2, y:1, t:'emitter'}, {x:2, y:3, t:'right'}, {x:3, y:3, t:'right'}, {x:4, y:3, t:'down'},
+            {x:6, y:1, t:'emitter'}, {x:6, y:3, t:'left'}, {x:5, y:3, t:'left'},
+            {x:4, y:4, t:'merge'}, {x:4, y:6, t:'output'},
+            {x:10, y:1, t:'emitter'}, {x:10, y:4, t:'wall'}, {x:10, y:3, t:'split'},
+            {x:9, y:5, t:'right'}, {x:11, y:5, t:'left'}, {x:10, y:6, t:'merge'}, {x:10, y:8, t:'output'}
+        ],
+        'plinko': [
+            {x:10, y:0, t:'emitter'}, {x:10, y:1, t:'split'},
+            {x:9, y:3, t:'split'}, {x:11, y:3, t:'split'},
+            {x:8, y:5, t:'split'}, {x:10, y:5, t:'split'}, {x:12, y:5, t:'split'},
+            {x:7, y:7, t:'split'}, {x:9, y:7, t:'split'}, {x:11, y:7, t:'split'}, {x:13, y:7, t:'split'},
+            {x:6, y:9, t:'output'}, {x:8, y:9, t:'output'}, {x:10, y:9, t:'output'}, {x:12, y:9, t:'output'}, {x:14, y:9, t:'output'}
+        ],
+        'race': [
+            {x:2, y:0, t:'emitter'}, {x:2, y:1, t:'split'}, 
+            // Track 1 (Direct)
+            {x:1, y:2, t:'down'}, {x:1, y:10, t:'right'}, 
+            // Track 2 (Windy)
+            {x:3, y:2, t:'right'}, {x:4, y:2, t:'down'}, {x:4, y:4, t:'left'}, {x:3, y:4, t:'down'},
+            {x:3, y:6, t:'right'}, {x:4, y:6, t:'down'}, {x:4, y:8, t:'left'}, {x:3, y:8, t:'down'},
+            {x:3, y:10, t:'left'},
+            // Finish Line
+            {x:2, y:10, t:'merge'}, {x:2, y:12, t:'output'}
+        ],
+        'jam': [
+            {x:10, y:0, t:'emitter'}, {x:9, y:0, t:'emitter'}, {x:11, y:0, t:'emitter'},
+            {x:8, y:2, t:'right'}, {x:12, y:2, t:'left'},
+            {x:9, y:2, t:'right'}, {x:11, y:2, t:'left'},
+            {x:10, y:3, t:'down'}, {x:10, y:4, t:'down'}, {x:10, y:5, t:'down'},
+            {x:10, y:6, t:'split'}, {x:9, y:7, t:'output'}, {x:11, y:7, t:'output'}
+        ],
+        'adder': [
+            // Two inputs
+            {x:5, y:1, t:'emitter'}, {x:9, y:1, t:'emitter'},
+            // Funnel to merge
+            {x:5, y:3, t:'right'}, {x:6, y:3, t:'right'}, {x:7, y:3, t:'down'},
+            {x:9, y:3, t:'left'}, {x:8, y:3, t:'left'}, 
+            // The Merge (Adder)
+            {x:7, y:5, t:'merge'}, 
+            // Output
+            {x:7, y:7, t:'output'}
+        ]
+    };
+
+    // --- Initialization ---
+    function init() {
+        createTools();
+        createGrid();
+        loadCircuit('basic');
+    }
+
+    function loadCircuit(key) {
+        clearGrid(); // Also clears nodes
+        resetSimulation();
+        
+        const circuit = CIRCUITS[key];
+        if(!circuit) return;
+
+        circuit.forEach(cell => {
+            setCell(cell.x, cell.y, cell.t);
+        });
+        
+        log(`Loaded circuit: ${key.toUpperCase()}`);
+    }
+
+    function createTools() {
+        const container = document.getElementById('tools-container');
+        Object.keys(TOOLS).forEach(key => {
+            const tool = TOOLS[key];
+            const btn = document.createElement('button');
+            btn.className = `tool-btn p-2 rounded flex flex-col items-center justify-center gap-1 border border-zinc-700 ${key === 'wall' ? 'selected' : ''} ${tool.color.includes('hover') ? '' : 'bg-zinc-800'}`;
+            btn.innerHTML = `
+                <div class="w-8 h-8 rounded ${tool.color} flex items-center justify-center text-base text-white font-bold shadow-lg shadow-black/30">${tool.icon}</div>
+                <span class="text-[10px] text-zinc-400 font-medium uppercase tracking-wide">${tool.label}</span>
+            `;
+            btn.onclick = () => selectTool(key, btn);
+            container.appendChild(btn);
+        });
+    }
+
+    function selectTool(key, btnElement) {
+        selectedTool = key;
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('selected'));
+        btnElement.classList.add('selected');
+    }
+
+    function createGrid() {
+        const gridEl = document.getElementById('grid');
+        gridEl.style.gridTemplateColumns = `repeat(${GRID_W}, ${CELL_SIZE}px)`;
+        gridEl.style.gridTemplateRows = `repeat(${GRID_H}, ${CELL_SIZE}px)`;
+        gridData = [];
+
+        for (let y = 0; y < GRID_H; y++) {
+            const row = [];
+            for (let x = 0; x < GRID_W; x++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell type-void';
+                cell.dataset.x = x;
+                cell.dataset.y = y;
+                
+                // Interaction
+                cell.onmousedown = (e) => {
+                    if(e.buttons === 1) setCell(x, y, selectedTool);
+                };
+                cell.onmouseenter = (e) => {
+                    if(e.buttons === 1) setCell(x, y, selectedTool);
+                };
+
+                gridEl.appendChild(cell);
+                row.push({ type: 'void', element: cell, value: null });
+            }
+            gridData.push(row);
+        }
+    }
+
+    function setCell(x, y, type) {
+        if (x < 0 || x >= GRID_W || y < 0 || y >= GRID_H) return;
+        const cellData = gridData[y][x];
+        cellData.type = type;
+        cellData.element.className = `cell type-${type}`;
+        cellData.element.innerHTML = TOOLS[type].icon;
+    }
+
+    function clearGrid() {
+        nodes.forEach(n => n.element.remove());
+        nodes = [];
+        for(let y=0; y<GRID_H; y++) {
+            for(let x=0; x<GRID_W; x++) {
+                setCell(x, y, 'void');
+            }
+        }
+        log("Grid cleared.");
+        resetSimulation(); // Stop running
+    }
+
+    // --- Logic Engine (The Semantic Gravity) ---
+
+    class Node {
+        constructor(x, y, value) {
+            this.x = x;
+            this.y = y;
+            this.value = value || 1; // Default value
+            this.id = Math.random().toString(36).substr(2, 9);
+            this.active = true;
+            
+            // Visuals
+            this.element = document.createElement('div');
+            this.element.className = 'node';
+            this.element.textContent = this.value;
+            this.updateVisualPosition();
+            document.getElementById('grid').appendChild(this.element);
+        }
+
+        updateVisualPosition() {
+            // Calculate pixel position relative to grid
+            const left = (this.x * CELL_SIZE) + (CELL_SIZE/2) - 12;
+            const top = (this.y * CELL_SIZE) + (CELL_SIZE/2) - 12;
+            this.element.style.transform = `translate(${left}px, ${top}px)`;
+        }
+
+        move(dx, dy) {
+            this.x += dx;
+            this.y += dy;
+            this.updateVisualPosition();
+        }
+
+        destroy() {
+            this.active = false;
+            this.element.style.transform += " scale(0)";
+            this.element.style.opacity = 0;
+            setTimeout(() => this.element.remove(), 200);
+        }
+
+        updateValue(newVal) {
+            this.value = newVal;
+            this.element.textContent = this.value;
+            this.element.classList.add('node-merged');
+            // Visual pop
+            this.element.style.transform += " scale(1.2)";
+            setTimeout(() => this.updateVisualPosition(), 150);
+        }
+    }
+
+    function tick() {
+        stepCount++;
+        
+        // 1. Spawn from Emitters
+        if (stepCount % 3 === 0) { // Spawn rate limiter
+            for(let y=0; y<GRID_H; y++) {
+                for(let x=0; x<GRID_W; x++) {
+                    if(gridData[y][x].type === 'emitter') {
+                        // Only spawn if space is clear
+                        const occupied = nodes.find(n => n.x === x && n.y === y && n.active);
+                        if(!occupied) {
+                            nodes.push(new Node(x, y, 1));
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Process Nodes
+        const nextMoves = [];
+        const nodesToRemove = [];
+
+        nodes.forEach(node => {
+            if(!node.active) return;
+
+            // Determine next position based on current cell type
+            let desiredDx = 0;
+            let desiredDy = 1; // Default Gravity
+
+            const currentCell = gridData[node.y][node.x].type;
+            
+            if (currentCell === 'right') { desiredDx = 1; desiredDy = 0; }
+            else if (currentCell === 'left') { desiredDx = -1; desiredDy = 0; }
+            else if (currentCell === 'down') { desiredDx = 0; desiredDy = 1; }
+            else if (currentCell === 'split') {
+                desiredDx = 1; desiredDy = 0; // Main node goes right
+                // Spawn clone to left if space is free (simple split logic)
+                if (stepCount % 2 !== 0) { desiredDx = -1; } // Alternate for visual clarity in simple demo
+            }
+            else if (currentCell === 'wall') {
+                nodesToRemove.push(node);
+                return; 
+            }
+
+            // Check TARGET cell
+            const tx = node.x + desiredDx;
+            const ty = node.y + desiredDy;
+
+            // Boundary Check
+            if (tx < 0 || tx >= GRID_W || ty >= GRID_H) {
+                nodesToRemove.push(node); 
+                return;
+            }
+
+            const targetType = gridData[ty][tx].type;
+
+            // Collision/Interaction Logic
+            if (targetType === 'wall') {
+                // Check if we can slide sideways? No, strict block.
+                return; 
+            }
+            else if (targetType === 'output') {
+                log(`★ Output Reached at [${tx},${ty}]: Value ${node.value}`);
+                const flash = document.createElement('div');
+                flash.style.position = 'absolute';
+                flash.style.left = (tx*CELL_SIZE)+'px';
+                flash.style.top = (ty*CELL_SIZE)+'px';
+                flash.style.width = CELL_SIZE+'px';
+                flash.style.height = CELL_SIZE+'px';
+                flash.style.background = 'white';
+                flash.style.opacity = '0.8';
+                flash.style.transition = 'opacity 0.5s';
+                flash.style.pointerEvents = 'none';
+                document.getElementById('grid').appendChild(flash);
+                setTimeout(()=> { flash.style.opacit
