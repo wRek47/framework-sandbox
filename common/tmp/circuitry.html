@@ -488,4 +488,101 @@
                 flash.style.transition = 'opacity 0.5s';
                 flash.style.pointerEvents = 'none';
                 document.getElementById('grid').appendChild(flash);
-                setTimeout(()=> { flash.style.opacit
+                setTimeout(()=> { flash.style.opacity=0; setTimeout(()=>flash.remove(),500)}, 50);
+                
+                nodesToRemove.push(node);
+                return;
+            }
+
+            // Merge Logic
+            if (targetType === 'merge') {
+                 const existing = nodes.find(n => n.x === tx && n.y === ty && n.active);
+                 if (existing) {
+                     existing.updateValue(existing.value + node.value);
+                     nodesToRemove.push(node); 
+                     return;
+                 }
+            } else {
+                const occupied = nodes.find(n => n.x === tx && n.y === ty && n.active);
+                if (occupied) return; 
+            }
+
+            nextMoves.push({ node: node, dx: desiredDx, dy: desiredDy });
+        });
+
+        nextMoves.forEach(m => m.node.move(m.dx, m.dy));
+        
+        nodesToRemove.forEach(n => {
+            n.destroy();
+            const idx = nodes.indexOf(n);
+            if(idx > -1) nodes.splice(idx, 1);
+        });
+
+        updateStats();
+    }
+
+    // --- Simulation Control ---
+    function step() {
+        tick();
+    }
+
+    function togglePlay() {
+        isRunning = !isRunning;
+        const btn = document.getElementById('btn-play');
+        if(isRunning) {
+            btn.innerHTML = '<span>⏸</span> Pause';
+            btn.classList.replace('bg-green-600', 'bg-amber-600');
+            btn.classList.replace('hover:bg-green-500', 'hover:bg-amber-500');
+            tickInterval = setInterval(tick, tickSpeed);
+        } else {
+            btn.innerHTML = '<span>▶</span> Run';
+            btn.classList.replace('bg-amber-600', 'bg-green-600');
+            btn.classList.replace('hover:bg-amber-500', 'hover:bg-green-500');
+            clearInterval(tickInterval);
+        }
+    }
+
+    function updateSpeed(val) {
+        tickSpeed = 1050 - val; 
+        document.getElementById('tick-display').textContent = tickSpeed + 'ms';
+        if(isRunning) {
+            clearInterval(tickInterval);
+            tickInterval = setInterval(tick, tickSpeed);
+        }
+    }
+
+    function resetSimulation() {
+        // Keep the grid, kill the nodes
+        nodes.forEach(n => n.destroy());
+        nodes = [];
+        stepCount = 0;
+        log("Simulation Reset.");
+        updateStats();
+        
+        // If running, restart the interval to sync
+        if(isRunning) {
+            clearInterval(tickInterval);
+            tickInterval = setInterval(tick, tickSpeed);
+        }
+    }
+
+    // --- Utilities ---
+    function log(msg) {
+        const logArea = document.getElementById('log-area');
+        const entry = document.createElement('div');
+        entry.textContent = `[${stepCount}] ${msg}`;
+        entry.className = 'border-l-2 border-zinc-700 pl-2 text-[10px] text-zinc-400';
+        logArea.insertBefore(entry, logArea.firstChild);
+        if(logArea.children.length > 50) logArea.lastChild.remove();
+    }
+
+    function updateStats() {
+        document.getElementById('node-count').textContent = nodes.length + ' Nodes';
+    }
+
+    // Start
+    init();
+
+</script>
+</body>
+</html>
