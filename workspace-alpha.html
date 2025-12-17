@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>PolyTiles: Architect Edition</title>
+  
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" integrity="sha512-b2QcS5SsA8tZodcDtGRELiGv5SaKSk1vDQLaNumByC6DWX/vQ0ZgPdgy7lJmObapUP3AJu6X6E7noTe1Yn+zw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" integrity="sha512-oAvZuuYVzkcTc2dH5z1ZJup5OmSQ000qlfRvuoTTiyTBjwX1faoyearj8KdMq0LgsBTHMrRuMek7s+CxF8yE+w==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  
+  <style>
+    :root { --bg: #f0f2f5; --surface: #ffffff; --border: #e4e6eb; --accent: #4f46e5; --dark: #1f2937; }
+    body { background: var(--bg); height: 100vh; overflow: hidden; display: flex; flex-direction: column; font-family: system-ui, -apple-system, sans-serif; }
+
+    /* --- LAYOUT --- */
+    .app-container { flex: 1; display: flex; overflow: hidden; position: relative; }
+    .stage { flex: 1; padding: 2rem; display: flex; justify-content: center; align-items: flex-start; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+    /* --- MASTER BAR --- */
+    .master-bar { 
+      background: var(--dark); color: #fff; padding: 0.5rem 1.5rem; 
+      display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; 
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 10; flex-wrap: wrap; gap: 10px;
+    }
+    .status-dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; display: inline-block; margin-right: 6px; }
+
+    /* --- TILE --- */
+    .tile {
+      background: var(--surface); width: 100%; max-width: 1200px;
+      border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      display: flex; flex-direction: column; min-height: 600px;
+      border: 1px solid var(--border); overflow: hidden;
+    }
+    .tile-header { 
+      padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); 
+      display: flex; justify-content: space-between; align-items: center; background: #fff; 
+      flex-wrap: wrap; gap: 1rem;
+    }
+    .node-title { font-weight: 700; font-size: 1.25rem; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+    
+    /* --- TABS --- */
+    .sheet-tabs { 
+      display: flex; gap: 4px; padding: 0 1.5rem; background: #f8f9fa; 
+      border-bottom: 1px solid var(--border); overflow-x: auto; 
+      scrollbar-width: none; 
+    }
+    .sheet-tabs::-webkit-scrollbar { display: none; } 
+    .tab { 
+      padding: 10px 16px; font-size: 0.9rem; font-weight: 600; color: #666; 
+      cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; white-space: nowrap; 
+      user-select: none;
+    }
+    .tab:hover { color: var(--accent); background: rgba(0,0,0,0.02); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); background: #fff; }
+    .tab-add { padding: 10px 14px; cursor: pointer; color: #999; display: flex; align-items: center; }
+    
+    /* Drag & Drop Visuals */
+    .tab.dragging, .cell.dragging { opacity: 0.4; }
+    .tab.drag-over { border-left: 2px solid var(--accent); background: #eef2ff; }
+    .cell.drag-over { background: #eef2ff; border: 2px dashed var(--accent); }
+
+    /* --- SHEET AUTH BAR --- */
+    .sheet-auth-bar {
+      background: #fff; border-bottom: 1px solid var(--border);
+      padding: 0.5rem 1.5rem; display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.85rem; color: #555; flex-wrap: wrap; gap: 0.5rem;
+    }
+    .user-avatars { display: flex; margin-right: 10px; }
+    .u-av { width: 28px; height: 28px; border-radius: 50%; background: #ddd; border: 2px solid #fff; margin-left: -8px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; color: #555; }
+
+    /* --- VIEWPORT --- */
+    .sheet-viewport { padding: 0; flex: 1; overflow-y: auto; display: flex; flex-direction: column; position: relative; }
+    .view-inner { padding: 1.5rem; flex: 1; }
+
+    /* --- GRID / CELLS --- */
+    .grid-layout { display: grid; gap: 16px; }
+    .cell {
+      background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 16px;
+      min-height: 110px; position: relative; cursor: pointer;
+      display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .cell:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(0,0,0,0.05); border-color: var(--accent); z-index: 2; }
+    .cell-title { font-weight: 600; font-size: 1rem; margin-bottom: 4px; }
+    .cell-meta { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .cell-users { position: absolute; top: 10px; right: 10px; font-size: 0.75rem; color: var(--accent); font-weight: 600; background: #eef2ff; padding: 2px 8px; border-radius: 12px; }
+
+    /* --- KANBAN --- */
+    .kanban-layout { display: flex; gap: 16px; height: 100%; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; scroll-snap-type: x mandatory; }
+    .kanban-col { min-width: 280px; scroll-snap-align: start; background: #f8f9fa; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); }
+    .kanban-header { font-weight: 600; font-size: 0.8rem; text-transform: uppercase; color: #666; margin-bottom: 8px; }
+
+    /* --- BLUEPRINT --- */
+    .blueprint-wrapper { display: flex; flex-direction: column; height: 100%; touch-action: none; }
+    .bp-toolbar { padding: 8px 16px; background: #f8f9fa; border-bottom: 1px solid var(--border); display: flex; gap: 8px; overflow-x: auto; white-space: nowrap; }
+    .bp-canvas { 
+      flex: 1; position: relative; overflow: hidden; cursor: crosshair; background-color: #fff;
+      background-image: linear-gradient(#e5e7eb 1px, transparent 1px), linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    .bp-el { position: absolute; transform-origin: 0 50%; pointer-events: none; }
+    .bp-wall { height: 6px; background: #333; border-radius: 3px; z-index: 1; }
+    .bp-door { width: 30px; height: 30px; border: 3px solid #666; border-bottom: none; border-left: none; border-radius: 0 30px 0 0; z-index: 2; transform-origin: 0 100%; }
+    .bp-win { width: 30px; height: 8px; background: #fff; border: 2px solid #333; z-index: 2; transform-origin: center; }
+    .bp-label { font-size: 12px; color: #666; font-weight: bold; background: rgba(255,255,255,0.8); padding: 2px 4px; border: 1px dashed #ccc; pointer-events: auto; }
+
+    /* --- COMMON --- */
+    .notepad { width: 100%; height: 100%; border: none; outline: none; resize: none; font-family: monospace; font-size: 1rem; line-height: 1.6; color: #333; padding: 1.5rem; }
+    .breadcrumbs { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; flex-wrap: wrap; }
+    .crumb { color: var(--accent); cursor: pointer; text-decoration: none; }
+    .crumb-sep { color: #ccc; }
+    
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; place-items: center; z-index: 100; }
+    .modal-box { background: white; padding: 1.5rem; border-radius: 12px; width: 90%; max-width: 320px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+
+    /* --- MOBILE OVERRIDES --- */
+    @media (max-width: 768px) {
+      .stage { padding: 0; align-items: stretch; }
+      .tile { height: 100%; border-radius: 0; border: none; }
+      .grid-layout { grid-template-columns: 1fr !important; }
+      .master-bar { justify-content: center; text-align: center; }
+      .sheet-auth-bar .d-flex { flex-wrap: wrap; justify-content: center; }
+      .view-inner { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<input type="file" id="fileImporter" style="display:none" onchange="handleFileSelect(this)" />
+
+<div class="master-bar">
+  <div class="d-flex align-items-center mb-1 mb-md-0">
+    <strong>💠 PolyTiles OS</strong>
+    <span class="ms-3 text-white-50">|</span>
+    <span class="ms-3 status-dot"></span><span>Online</span>
+    <div class="ms-4 btn-group d-none d-md-flex">
+        <button class="btn btn-sm btn-outline-light border-0" onclick="triggerIO('export','master')" title="Export Full DB"><i class="bi bi-download"></i> DB</button>
+        <button class="btn btn-sm btn-outline-light border-0" onclick="triggerIO('import','master')" title="Import Full DB"><i class="bi bi-upload"></i> DB</button>
+    </div>
+  </div>
+  <div class="d-flex align-items-center justify-content-center">
+    <div class="me-3 text-white-50" style="font-size:0.75rem">
+        <span id="globalUserCount">0</span> Users
+    </div>
+    <button class="btn btn-sm btn-outline-light">Admin Panel</button>
+  </div>
+</div>
+
+<div class="bg-white border-bottom px-3 py-2 d-flex justify-content-between align-items-center">
+  <div class="breadcrumbs" id="crumbTrail"></div>
+  <button class="btn btn-sm btn-outline-danger" onclick="resetDB()"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+</div>
+
+<div class="app-container">
+  <div class="stage">
+    <div class="tile">
+      
+      <div class="tile-header">
+        <div class="d-flex align-items-center gap-3">
+            <h2 class="node-title m-0" id="tileTitle">Loading...</h2>
+            <button class="btn btn-sm btn-outline-secondary" onclick="renameItem('node')" title="Rename Node"><i class="bi bi-pencil"></i></button>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+            <div class="btn-group">
+                <button class="btn btn-sm btn-outline-secondary" onclick="triggerIO('export','node')"><i class="bi bi-download"></i> Node</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="triggerIO('import','node')"><i class="bi bi-upload"></i></button>
+            </div>
+            <div class="text-muted small ms-2" id="tileMeta"></div>
+        </div>
+      </div>
+
+      <div class="sheet-tabs" id="sheetTabs"></div>
+
+      <div class="sheet-auth-bar" id="sheetAuthBar"></div>
+
+      <div class="sheet-viewport" id="viewport"></div>
+
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal">
+  <div class="modal-box">
+    <h5 class="mb-3">Selection Option</h5>
+    <div class="d-grid gap-2" id="modalOptions"></div>
+    <button class="btn btn-sm btn-light mt-3 w-100" onclick="closeModal()">Cancel</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+<script>
+const createId = () => Math.random().toString(36).substr(2, 9);
+const randomUsers = () => Math.floor(Math.random() * 50) + 1;
+
+/* ---------------------------------------------------------------------------
+   DATA INIT
+   --------------------------------------------------------------------------- */
+const defaultDB = {
+  'root': {
+    id: 'root', name: 'Master Dashboard', activeSheet: 0, userCount: 142,
+    sheets: [
+      { id: 's1', type: 'grid', name: 'Overview', rows: 2, cols: 3, auth: { users: 5, joined: true, locked: false }, cells: { '0-0': 'n_html_demo' } },
+      { id: 's2', type: 'blueprint', name: 'Site Plan', elements: [], auth: { users: 2, joined: false, locked: false } }
+    ]
+  },
+  'n_html_demo': { 
+    id: 'n_html_demo', name: 'Dev Console', activeSheet: 0, userCount: 34,
+    sheets: [
+      { id:'s_h1', type:'html', name:'Code Canvas', auth: { users: 12, joined: true, locked: false }, content:'<h3>Mobile Ready</h3>\n<p>This view adapts to smaller screens.</p>' }
+    ] 
+  }
+};
+
+let db = JSON.parse(localStorage.getItem('polyTilesDB')) || defaultDB;
+let path = ['root']; 
+let currentNodeId = 'root';
+
+/* ---------------------------------------------------------------------------
+   DRAG & DROP SYSTEM (Global)
+   --------------------------------------------------------------------------- */
+let dragType = null; // 'sheet' or 'node'
+let dragSource = null; // index for sheet, coord for node
+
+function handleDragStart(e, type, source) {
+    dragType = type;
+    dragSource = source;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', JSON.stringify({type, source}));
+    setTimeout(() => e.target.classList.add('dragging'), 0);
+}
+
+function handleDragOver(e) {
+    e.preventDefault(); // Necessary to allow dropping
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDragEnter(e) {
+    e.target.closest('.draggable-target')?.classList.add('drag-over');
+}
+
+function handleDragLeave(e) {
+    e.target.closest('.draggable-target')?.classList.remove('drag-over');
+}
+
+function handleDrop(e, targetType, targetSource) {
+    e.stopPropagation();
+    e.target.closest('.draggable-target')?.classList.remove('drag-over');
+    
+    // Cleanup visual style
+    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+
+    if (dragType !== targetType) return; // Cannot drop sheet on node
+
+    const node = db[currentNodeId];
+
+    // 1. SHEET REORDER
+    if (dragType === 'sheet') {
+        const fromIdx = parseInt(dragSource);
+        const toIdx = parseInt(targetSource);
+        if (fromIdx !== toIdx) {
+            // Move array item
+            const item = node.sheets.splice(fromIdx, 1)[0];
+            node.sheets.splice(toIdx, 0, item);
+            // Update active sheet pointer
+            node.activeSheet = toIdx;
+            save();
+            render();
+        }
+    }
+
+    // 2. NODE (CELL) MOVE
+    if (dragType === 'node') {
+        const sheet = node.sheets[node.activeSheet];
+        const fromCoord = dragSource;
+        const toCoord = targetSource;
+        
+        if (fromCoord !== toCoord) {
+            const nodeId = sheet.cells[fromCoord];
+            const targetId = sheet.cells[toCoord];
+
+            // Swap logic
+            if (targetId) {
+                sheet.cells[fromCoord] = targetId; // Move target to source
+            } else {
+                delete sheet.cells[fromCoord]; // Source becomes empty
+            }
+            sheet.cells[toCoord] = nodeId; // Move source to target
+            
+            save();
+            render();
+        }
+    }
+}
+
+
+/* ---------------------------------------------------------------------------
+   CORE RENDERER
+   --------------------------------------------------------------------------- */
+function render() {
+  const node = db[currentNodeId];
+  if(!node) return;
+
+  document.getElementById('globalUserCount').textContent = Math.floor(Math.random() * 500) + 1000;
+  document.getElementById('tileTitle').textContent = node.name;
+  document.getElementById('tileMeta').innerHTML = `<strong>👥 ${node.userCount || 0}</strong>`;
+  renderBreadcrumbs();
+
+  // TABS (Updated with Drag Attributes)
+  const tabsContainer = document.getElementById('sheetTabs');
+  tabsContainer.innerHTML = '';
+  node.sheets.forEach((sheet, index) => {
+    if(!sheet.auth) sheet.auth = { users: randomUsers(), joined: false, locked: false };
+    
+    const tab = document.createElement('div');
+    tab.className = `tab draggable-target ${index === node.activeSheet ? 'active' : ''}`;
+    tab.innerHTML = getIcon(sheet.type) + ' ' + sheet.name + (sheet.auth.locked ? ' 🔒' : '');
+    
+    // Drag Attributes
+    tab.draggable = true;
+    tab.ondragstart = (e) => handleDragStart(e, 'sheet', index);
+    tab.ondragover = handleDragOver;
+    tab.ondragenter = handleDragEnter;
+    tab.ondragleave = handleDragLeave;
+    tab.ondrop = (e) => handleDrop(e, 'sheet', index);
+    
+    tab.onclick = () => { node.activeSheet = index; save(); render(); };
+    tabsContainer.appendChild(tab);
+  });
+  
+  const addTab = document.createElement('div');
+  addTab.className = 'tab-add';
+  addTab.innerHTML = '<i class="bi bi-plus-lg"></i>';
+  addTab.onclick = promptAddSheet;
+  tabsContainer.appendChild(addTab);
+
+  const viewport = document.getElementById('viewport');
+  viewport.innerHTML = ''; 
+  const activeSheet = node.sheets[node.activeSheet];
+  
+  if (activeSheet) {
+    renderSheetAuthBar(activeSheet);
+    const container = document.createElement('div');
+    if (activeSheet.type === 'notepad') renderNotepad(viewport, activeSheet); 
+    else if (activeSheet.type === 'html') { container.className = 'view-inner'; viewport.appendChild(container); renderHtml(container, activeSheet); }
+    else if (activeSheet.type === 'blueprint') { container.className = 'blueprint-wrapper'; viewport.appendChild(container); renderBlueprint(container, activeSheet); }
+    else {
+      container.className = 'view-inner'; viewport.appendChild(container);
+      if(activeSheet.type === 'grid') renderGrid(container, activeSheet); 
+      if(activeSheet.type === 'kanban') renderKanban(container, activeSheet); 
+      if(activeSheet.type === 'calendar') renderCalendar(container, activeSheet); 
+    }
+  }
+}
+
+function renderSheetAuthBar(sheet) {
+  const bar = document.getElementById('sheetAuthBar');
+  bar.innerHTML = '';
+  const left = document.createElement('div');
+  left.className = 'd-flex align-items-center gap-2';
+  let avatars = '';
+  for(let i=0; i<Math.min(3, sheet.auth.users); i++) avatars += `<div class="u-av" style="background:hsl(${Math.random()*360}, 70%, 80%)">${String.fromCharCode(65+i)}</div>`;
+  left.innerHTML = `<div class="user-avatars">${avatars}</div><span><strong>${sheet.auth.users}</strong> view</span>${sheet.auth.locked ? '<span class="locked-indicator">READ ONLY</span>' : ''}`;
+  
+  const right = document.createElement('div');
+  right.className = 'd-flex gap-2 align-items-center';
+  
+  const ioGrp = document.createElement('div');
+  ioGrp.className = 'btn-group me-2 d-none d-sm-flex'; 
+  ioGrp.innerHTML = `
+    <button class="btn btn-sm btn-light border" onclick="renameItem('sheet')" title="Rename"><i class="bi bi-pencil"></i></button>
+    <button class="btn btn-sm btn-light border" onclick="triggerIO('export','sheet')" title="Export"><i class="bi bi-download"></i></button>
+  `;
+  
+  const btnJoin = document.createElement('button');
+  btnJoin.className = `btn btn-sm ${sheet.auth.joined ? 'btn-outline-danger' : 'btn-outline-success'}`;
+  btnJoin.innerHTML = sheet.auth.joined ? '<i class="bi bi-box-arrow-right"></i> Leave' : '<i class="bi bi-box-arrow-in-right"></i> Join';
+  btnJoin.onclick = () => { sheet.auth.joined = !sheet.auth.joined; sheet.auth.users += sheet.auth.joined ? 1 : -1; save(); render(); };
+  
+  const btnLock = document.createElement('button');
+  btnLock.className = 'btn btn-sm btn-light border';
+  btnLock.innerHTML = sheet.auth.locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+  btnLock.onclick = () => { sheet.auth.locked = !sheet.auth.locked; save(); render(); };
+  
+  right.appendChild(ioGrp); right.appendChild(btnJoin); right.appendChild(btnLock);
+  bar.appendChild(left); bar.appendChild(right);
+}
+
+/* ---------------------------------------------------------------------------
+   GRID ENGINE (With Drag & Drop)
+   --------------------------------------------------------------------------- */
+function renderGrid(container, sheet) {
+  const grid = document.createElement('div'); grid.className = 'grid-layout';
+  grid.style.gridTemplateColumns = `repeat(${sheet.cols}, 1fr)`;
+  for(let r=0; r<sheet.rows; r++) {
+    for(let c=0; c<sheet.cols; c++) {
+      const coord = `${r}-${c}`; 
+      const childId = sheet.cells[coord];
+      
+      const cell = document.createElement('div'); 
+      cell.className = 'cell draggable-target';
+      
+      // Drag Attributes
+      cell.ondragover = handleDragOver;
+      cell.ondragenter = handleDragEnter;
+      cell.ondragleave = handleDragLeave;
+      cell.ondrop = (e) => handleDrop(e, 'node', coord);
+
+      if(childId) {
+        const child = db[childId];
+        cell.draggable = true;
+        cell.ondragstart = (e) => handleDragStart(e, 'node', coord);
+
+        cell.innerHTML = `
+            <div class="cell-users">👥 ${child.userCount || 0}</div>
+            <div class="cell-title">${child.name}</div>
+            <div class="cell-meta">Node</div>`;
+        cell.onclick = () => navigateTo(childId);
+      } else {
+        cell.innerHTML = `<span class="text-black-50 fs-4 bi bi-plus-lg"></span>`;
+        cell.onclick = () => promptCreateNode(sheet, coord);
+      }
+      grid.appendChild(cell);
+    }
+  }
+  container.appendChild(grid);
+}
+
+/* ---------------------------------------------------------------------------
+   OTHER VIEW ENGINES
+   --------------------------------------------------------------------------- */
+let bpTool = 'wall';
+function renderBlueprint(container, sheet) {
+  if (!sheet.elements) sheet.elements = [];
+  const tools = [
+    { id: 'wall', lbl: '🧱 Wall' }, { id: 'door', lbl: '🚪 Door' }, { id: 'win', lbl: '🪟 Win' }, { id: 'label', lbl: '🏷️ Label' }, { id: 'undo', lbl: '↩️' }
+  ];
+  const toolbar = document.createElement('div'); toolbar.className = 'bp-toolbar';
+  tools.forEach(t => {
+    const btn = document.createElement('button'); 
+    btn.className = `btn btn-sm ${bpTool === t.id ? 'btn-primary' : 'btn-outline-secondary'}`; 
+    btn.textContent = t.lbl;
+    btn.onclick = () => { if (t.id === 'undo') { sheet.elements.pop(); save(); render(); return; } bpTool = t.id; render(); };
+    toolbar.appendChild(btn);
+  });
+  container.appendChild(toolbar);
+  const canvas = document.createElement('div'); canvas.className = 'bp-canvas';
+  sheet.elements.forEach(el => {
+    const d = document.createElement('div'); d.className = 'bp-el';
+    if(el.type === 'wall') { d.className += ' bp-wall'; d.style.left = el.x + 'px'; d.style.top = el.y + 'px'; d.style.width = el.len + 'px'; d.style.transform = `rotate(${el.ang}deg)`; }
+    if(el.type === 'door') { d.className += ' bp-door'; d.style.left = el.x + 'px'; d.style.top = el.y + 'px'; }
+    if(el.type === 'win') { d.className += ' bp-win'; d.style.left = el.x + 'px'; d.style.top = el.y + 'px'; }
+    if(el.type === 'label') { d.className += ' bp-label'; d.textContent = el.text; d.style.left = el.x + 'px'; d.style.top = el.y + 'px'; }
+    canvas.appendChild(d);
+  });
+  if (!sheet.auth.locked) {
+    let startX, startY, isDrawing = false, tempLine = null;
+    const getPos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      let cx = e.clientX, cy = e.clientY;
+      if (e.touches && e.touches.length > 0) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }
+      return { x: Math.round((cx - rect.left) / 20) * 20, y: Math.round((cy - rect.top) / 20) * 20 };
+    };
+    const startDraw = (e) => {
+      if(sheet.auth.locked) return;
+      if(e.type === 'touchstart') e.preventDefault(); 
+      const pos = getPos(e); const x = pos.x; const y = pos.y;
+      if (bpTool === 'wall') {
+        isDrawing = true; startX = x; startY = y;
+        tempLine = document.createElement('div'); tempLine.className = 'bp-el bp-wall'; tempLine.style.opacity = '0.5';
+        tempLine.style.left = x+'px'; tempLine.style.top = y+'px'; canvas.appendChild(tempLine);
+      } else if (bpTool === 'door' || bpTool === 'win') { sheet.elements.push({ type: bpTool, x, y }); save(); render();
+      } else if (bpTool === 'label') { const txt = prompt("Label Text:", "Room"); if(txt) { sheet.elements.push({ type: 'label', x, y, text: txt }); save(); render(); } }
+    };
+    const moveDraw = (e) => {
+      if(!isDrawing) return;
+      if(e.type === 'touchmove') e.preventDefault();
+      const pos = getPos(e); const x = pos.x; const y = pos.y;
+      const dx = x - startX; const dy = y - startY;
+      const len = Math.sqrt(dx*dx + dy*dy); const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+      tempLine.style.width = len + 'px'; tempLine.style.transform = `rotate(${ang}deg)`;
+    };
+    const endDraw = (e) => {
+      if(!isDrawing) return;
+      isDrawing = false;
+      const len = parseFloat(tempLine.style.width);
+      if (len > 0) {
+        const rotStr = tempLine.style.transform; const ang = parseFloat(rotStr.match(/rotate\(([-\d.]+)deg\)/)[1]);
+        sheet.elements.push({ type: 'wall', x: startX, y: startY, len, ang }); save();
+      }
+      render(); 
+    };
+    canvas.onmousedown = startDraw; canvas.onmousemove = moveDraw; canvas.onmouseup = endDraw;
+    canvas.ontouchstart = startDraw; canvas.ontouchmove = moveDraw; canvas.ontouchend = endDraw;
+  }
+  container.appendChild(canvas);
+}
+
+function renderHtml(container, sheet) {
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = `btn btn-sm mb-2 ${sheet.mode === 'edit' ? 'btn-primary' : 'btn-outline-secondary'}`;
+  toggleBtn.textContent = sheet.mode === 'edit' ? 'Run Code' : 'Edit Source';
+  toggleBtn.disabled = sheet.auth.locked;
+  toggleBtn.onclick = () => { sheet.mode = sheet.mode === 'edit' ? 'view' : 'edit'; save(); render(); };
+  container.appendChild(toggleBtn);
+  if (sheet.mode === 'edit' && !sheet.auth.locked) {
+    const editor = document.createElement('textarea'); editor.className = 'form-control font-monospace'; editor.style.height = '300px';
+    editor.value = sheet.content || ''; editor.addEventListener('input', (e) => { sheet.content = e.target.value; save(); }); container.appendChild(editor);
+  } else {
+    const preview = document.createElement('div'); preview.style.background = '#fff'; preview.style.padding='10px'; preview.style.border='1px solid #eee';
+    const safeContent = document.createRange().createContextualFragment(sheet.content || '<div></div>'); preview.appendChild(safeContent); container.appendChild(preview);
+  }
+}
+
+function renderKanban(container, sheet) {
+  const board = document.createElement('div'); board.className = 'kanban-layout';
+  sheet.columns.forEach((colName, colIndex) => {
+    const colDiv = document.createElement('div'); colDiv.className = 'kanban-col';
+    colDiv.innerHTML = `<div class="kanban-header">${colName}</div>`;
+    for(let r=0; r<8; r++) {
+      const coord = `${colIndex}-${r}`; const childId = sheet.cells[coord];
+      if(childId) {
+        const child = db[childId];
+        const card = document.createElement('div'); card.className = 'cell'; card.style.minHeight='60px';
+        card.innerHTML = `<div class="cell-users">👥 ${child.userCount}</div><div class="cell-title small">${child.name}</div>`;
+        card.onclick = () => navigateTo(childId); colDiv.appendChild(card);
+      } else if (r === 0 || sheet.cells[`${colIndex}-${r-1}`]) {
+        const addBtn = document.createElement('div'); addBtn.className = 'text-center p-2 text-muted small border rounded dashed mt-auto';
+        addBtn.innerHTML = '+ Add Item'; addBtn.style.cursor = 'pointer';
+        addBtn.onclick = () => promptCreateNode(sheet, coord, 'Task'); colDiv.appendChild(addBtn); break; 
+      }
+    }
+    board.appendChild(colDiv);
+  });
+  container.appendChild(board);
+}
+
+function renderCalendar(container, sheet) {
+  const level = sheet.level || 'year'; const focus = sheet.focus || { y: new Date().getFullYear(), m: 0 };
+  const controls = document.createElement('div'); controls.className = 'cal-controls d-flex justify-content-between mb-3';
+  controls.innerHTML = `<div><span class="badge bg-primary me-2">${level.toUpperCase()}</span><strong>${focus.y} ${level !== 'year' ? '/ ' + (focus.m+1) : ''}</strong></div><button class="btn btn-sm btn-outline-secondary" id="btnUpLevel">Up Level</button>`;
+  container.appendChild(controls);
+  controls.querySelector('#btnUpLevel').onclick = () => { if(level === 'month') { sheet.level = 'year'; save(); render(); } };
+  let items = [];
+  if (level === 'year') { for(let m=0; m<12; m++) items.push({ lbl: new Date(2000,m,1).toLocaleString('default',{month:'short'}), val: m, type: 'month' }); } 
+  else { const days = new Date(focus.y, focus.m + 1, 0).getDate(); for(let d=1; d<=days; d++) items.push({ lbl: d, val: d, type: 'day' }); }
+  const grid = document.createElement('div'); grid.className = 'grid-layout'; 
+  grid.style.gridTemplateColumns = level === 'year' ? 'repeat(auto-fill, minmax(80px, 1fr))' : 'repeat(7, 1fr)';
+  items.forEach(item => {
+    let coord = (level === 'year') ? `${focus.y}-${item.val}` : `${focus.y}-${focus.m}-${item.val}`;
+    const childId = sheet.cells[coord]; const cell = document.createElement('div'); cell.className = 'cell'; cell.style.minHeight = '50px'; cell.style.padding = '4px';
+    if (childId) { cell.innerHTML = `<div class="cell-title small text-truncate" style="max-width:100%">${db[childId].name}</div><span class="badge bg-success" style="font-size:8px">●</span>`; cell.onclick = () => navigateTo(childId); } 
+    else { cell.innerHTML = `<div class="text-muted small">${item.lbl}</div>`; cell.onclick = () => { if (item.type === 'month') { sheet.focus.m = item.val; sheet.level = 'month'; save(); render(); } else promptCreateNode(sheet, coord, `Event: ${focus.y}-${focus.m+1}-${item.val}`); }; }
+    grid.appendChild(cell);
+  });
+  container.appendChild(grid);
+}
+
+function renderNotepad(container, sheet) {
+  const area = document.createElement('textarea'); area.className = 'notepad';
+  area.value = sheet.content || ''; area.disabled = sheet.auth.locked;
+  area.placeholder = "Start typing notes..."; area.addEventListener('input', (e) => { sheet.content = e.target.value; save(); });
+  container.appendChild(area);
+}
+
+/* --- IO & NAVIGATION --- */
+function navigateTo(id) { path.push(id); currentNodeId = id; render(); }
+function navUp(index) { path = path.slice(0, index + 1); currentNodeId = path[path.length - 1]; render(); }
+function renderBreadcrumbs() {
+  const bc = document.getElementById('crumbTrail'); bc.innerHTML = '';
+  path.forEach((id, idx) => {
+    if(idx > 0) { const sep = document.createElement('span'); sep.className = 'crumb-sep'; sep.innerHTML = '/'; bc.appendChild(sep); }
+    const span = document.createElement('span'); span.className = 'crumb'; span.textContent = db[id].name;
+    span.onclick = () => navUp(idx); bc.appendChild(span);
+  });
+}
+function save() { localStorage.setItem('polyTilesDB', JSON.stringify(db)); }
+function resetDB() { localStorage.removeItem('polyTilesDB'); location.reload(); }
+function getIcon(type) { 
+  if(type==='grid') return '<i class="bi bi-grid-3x3"></i>'; 
+  if(type==='kanban') return '<i class="bi bi-kanban"></i>'; 
+  if(type==='calendar') return '<i class="bi bi-calendar3"></i>'; 
+  if(type==='notepad') return '<i class="bi bi-file-text"></i>'; 
+  if(type==='html') return '<i class="bi bi-code-slash"></i>'; 
+  if(type==='blueprint') return '<i class="bi bi-bricks"></i>';
+  return '•'; 
+}
+
+let ioContext = null;
+function renameItem(type) {
+  const node = db[currentNodeId];
+  if(type === 'node') { const newName = prompt("Rename Node:", node.name); if(newName) { node.name = newName; save(); render(); } }
+  if(type === 'sheet') { const sheet = node.sheets[node.activeSheet]; const newName = prompt("Rename Sheet:", sheet.name); if(newName) { sheet.name = newName; save(); render(); } }
+}
+function triggerIO(action, type) {
+  const node = db[currentNodeId]; const sheet = node.sheets[node.activeSheet];
+  if (action === 'export') {
+    let data = null; let filename = 'export.json';
+    if (type === 'master') { data = db; filename = 'polyTiles_backup.json'; }
+    if (type === 'node') { data = node; filename = `node_${node.name}.json`; }
+    if (type === 'sheet') { data = sheet; filename = `sheet_${sheet.name}.json`; }
+    downloadJSON(filename, data);
+  } else if (action === 'import') { ioContext = type; document.getElementById('fileImporter').click(); }
+}
+function handleFileSelect(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => { try { const json = JSON.parse(e.target.result); processImport(json); } catch(err) { alert("Invalid JSON file"); } input.value = ''; };
+  reader.readAsText(file);
+}
+function processImport(data) {
+  const node = db[currentNodeId]; const sheet = node.sheets[node.activeSheet];
+  if (ioContext === 'master') { if (confirm("Overwrite entire DB?")) { db = data; save(); location.reload(); } }
+  else if (ioContext === 'node') {
+    const newId = data.id === node.id ? createId() : data.id; data.id = newId; data.name += " (Imp)"; db[newId] = data;
+    let attached = false;
+    if (sheet.type === 'grid') {
+      for(let r=0; r<sheet.rows; r++) { for(let c=0; c<sheet.cols; c++) { if (!sheet.cells[`${r}-${c}`]) { sheet.cells[`${r}-${c}`] = newId; attached = true; break; } } if(attached) break; }
+    } else if (sheet.type === 'kanban') { for(let i=0; i<10; i++) { if (!sheet.cells[`0-${i}`]) { sheet.cells[`0-${i}`] = newId; attached = true; break; } } }
+    save(); render();
+  } else if (ioContext === 'sheet') { data.id = createId(); data.name += " (Imp)"; node.sheets.push(data); node.activeSheet = node.sheets.length - 1; save(); render(); }
+}
+function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+/* --- MODAL --- */
+const modal = document.getElementById('modal'); const modalOpts = document.getElementById('modalOptions'); let creationContext = null;
+function promptCreateNode(sheet, coord, defaultName) {
+  if(sheet.auth.locked) return alert("Locked."); creationContext = { mode: 'node', sheet, coord, defaultName };
+  openModal([ { lbl: 'New Project (Grid)', fn: () => createNode('grid') }, { lbl: 'New Task Board (Kanban)', fn: () => createNode('kanban') }, { lbl: 'New Calendar', fn: () => createNode('calendar') }, { lbl: 'New Note (Text)', fn: () => createNode('notepad') }, { lbl: 'New HTML Canvas', fn: () => createNode('html') }, { lbl: 'New Blueprint', fn: () => createNode('blueprint') } ]);
+}
+function promptAddSheet() {
+  creationContext = { mode: 'sheet' };
+  openModal([ { lbl: 'Add Grid Sheet', fn: () => addSheet('grid') }, { lbl: 'Add Kanban Board', fn: () => addSheet('kanban') }, { lbl: 'Add Calendar', fn: () => addSheet('calendar') }, { lbl: 'Add Notes', fn: () => addSheet('notepad') }, { lbl: 'Add HTML Canvas', fn: () => addSheet('html') }, { lbl: 'Add Blueprint', fn: () => addSheet('blueprint') } ]);
+}
+function createNode(type) {
+  const { sheet, coord, defaultName } = creationContext; const newId = createId();
+  const name = prompt("Name this node:", defaultName || "New Node") || "Untitled";
+  db[newId] = { id: newId, name: name, activeSheet: 0, userCount: randomUsers(), sheets: [] };
+  addSheetToNode(db[newId], type, 'Main View'); sheet.cells[coord] = newId; save(); closeModal(); render();
+}
+function addSheet(type) {
+  const node = db[currentNodeId]; const name = prompt("Sheet Name:", "New View"); if(!name) return;
+  addSheetToNode(node, type, name); save(); closeModal(); render();
+}
+function addSheetToNode(node, type, name) {
+  const newSheet = { id: createId(), type, name, auth: { users: 1, joined: true, locked: false } };
+  if(type === 'grid') { newSheet.rows=3; newSheet.cols=3; newSheet.cells={}; } 
+  if(type === 'kanban') { newSheet.columns=['ToDo','Doing','Done']; newSheet.cells={}; } 
+  if(type === 'calendar') { newSheet.level='year'; newSheet.focus={y:new Date().getFullYear(),m:0}; newSheet.cells={}; } 
+  if(type === 'notepad') { newSheet.content=''; } 
+  if(type === 'html') { newSheet.content='<h3>New Canvas</h3>'; newSheet.mode='view'; }
+  if(type === 'blueprint') { newSheet.elements=[]; }
+  node.sheets.push(newSheet); node.activeSheet = node.sheets.length - 1;
+}
+function openModal(opts) { modalOpts.innerHTML = ''; opts.forEach(opt => { const btn = document.createElement('button'); btn.className = 'btn btn-outline-primary text-start'; btn.textContent = opt.lbl; btn.onclick = opt.fn; modalOpts.appendChild(btn); }); modal.style.display = 'grid'; }
+function closeModal() { modal.style.display = 'none'; }
+
+render();
+</script>
+</body>
+</html>
