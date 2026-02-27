@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LOS Kernel: Spatial Notebook</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background: #0a0a0c; color: #aaccff; font-family: 'Consolas', monospace; overflow: hidden; margin: 0; }
+        #app-container { display: flex; height: 100vh; }
+        
+        /* Notebook Left Panel */
+        #notebook-panel { width: 40%; border-right: 1px solid #4466aa; display: flex; flex-direction: column; background: #050508; }
+        .notebook-header { padding: 15px; border-bottom: 1px solid #223355; display: flex; justify-content: space-between; align-items: center; }
+        #cells-container { flex: 1; overflow-y: auto; padding: 15px; }
+        .cell { margin-bottom: 15px; border: 1px solid #223355; border-radius: 4px; background: #000; display: flex; flex-direction: column; }
+        .cell-header { font-size: 0.7rem; color: #6688cc; padding: 2px 8px; background: #111a2a; border-bottom: 1px solid #223355; }
+        .cell textarea { width: 100%; background: transparent; color: #aaccff; border: none; outline: none; padding: 10px; resize: vertical; min-height: 60px; font-family: 'Consolas', monospace; }
+        
+        /* Right Panel (ULA + Memory) */
+        #right-panel { width: 60%; display: flex; flex-direction: column; }
+        #ula { flex: 2; background: #000; position: relative; border-bottom: 1px solid #4466aa; }
+        #memory-panel { flex: 1; background: #050508; padding: 15px; overflow-y: auto; }
+        
+        .label-text { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; color: #6688cc; margin-bottom: 10px; display: block; }
+        .memory-log { font-size: 0.85rem; color: #44aa77; line-height: 1.4; }
+        .error { color: #ff5555; }
+        .btn-kernel { background: #111a2a; color: #aaccff; border: 1px solid #4466aa; font-size: 0.8rem; }
+        .btn-kernel:hover { background: #223355; color: #fff; }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="notebook-panel">
+        <div class="notebook-header">
+            <span class="label-text mb-0 d-none">LOS Microkernel Cells</span>
+            <button id="addCellBtn" class="btn btn-kernel">+ Add Cell</button>
+<div class="notebook-header">
+    <span class="label-text mb-0 d-none">LOS Microkernel Cells</span>
+    <div class="d-flex gap-2">
+        <select id="blueprint-select" class="form-select" style="background: #111a2a; color: #aaccff; border: 1px solid #4466aa; font-size: 0.75rem; width: 140px;">
+            <option value="">Load Blueprint...</option>
+        </select>
+    </div>
+</div>
+        </div>
+        <div id="cells-container">
+            <div class="cell">
+                <div class="cell-header">Cell 1 [Base Algebra]</div>
+                <textarea spellcheck="false">// n = 2.5</textarea>
+            </div>
+			
+            <div class="cell">
+                <div class="cell-header">Cell 2 [CPU Algebra]</div>
+                <textarea spellcheck="false">// point = x
+// line = x * n
+// stack = y * n
+// walk = z * n
+// post = x ^ (n^2)
+// base = y ^ (n^2) ^ n
+// floor = n * ((x * n) @ z)
+// wall = n * ((x * n) @ y)
+// offset = o + [0, n, 0]
+// horizon = n * (x + [0, n, 0])
+// ceil = n * (n * (x + [0, n, 0])) @ z
+// cube = n * (((n * x) @ z) * n) @ y</textarea>
+            </div>
+			
+            <div class="cell">
+                <div class="cell-header">Cell 3 [Bin Algebra]</div>
+                <textarea spellcheck="false"></textarea>
+            </div>
+			
+            <div class="cell">
+                <div class="cell-header">Cell 4 [GPU Algebra]</div>
+                <textarea spellcheck="false"></textarea>
+            </div>
+			
+			<div class="cell">
+				<div class="cell-header">Cell 5 [Unused Algebra]</div>
+				<textarea spellcheck="false">// render point
+// render line
+// render stack
+// render walk
+// render floor
+// render wall
+// render offset
+// render horizon
+// render ceil
+// render cube
+// render origin
+// render block</textarea>
+			</div>
+        </div>
+    </div>
+
+    <div id="right-panel">
+<div id="editor-container" style="width: 100%; margin-bottom: 10px;">
+    <div style="font-family: monospace; color: #00ffff; margin-bottom: 5px;">// DATA_SCRIBE_BUFFER</div>
+    <textarea id="scribe-editor" 
+        style="width: 100%; height: 150px; background: #111; color: #00ffff; border: 1px solid #004444; font-family: 'Courier New', monospace; padding: 10px; outline: none;" 
+        placeholder="Paste code or text here to spatialize..."></textarea>
+</div>
+        <div id="ula"></div>
+<div id="toolbox" class="d-none" style="background: #111a2a; padding: 5px; border: 1px solid #4466aa; border-radius: 4px;">
+    <button id="tool-select" class="btn btn-sm btn-outline-info active">Select</button>
+    <button id="tool-paint" class="btn btn-sm btn-outline-success">Paint Tile</button>
+    <button id="tool-erase" class="btn btn-sm btn-outline-danger">Erase (Subtract)</button>
+</div>
+        <div id="memory-panel">
+            <span class="label-text">Topological Memory State</span>
+            <div id="memoryState" class="memory-log"></div>
+        </div>
+    </div>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// --- ULA INIT ---
+const ula = document.getElementById('ula');
+const renderer = new THREE.WebGLRenderer({
+	antialias: true
+});
+renderer.setSize(ula.clientWidth, ula.clientHeight);
+ula.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+// scene.background = new THREE.Color(0xaaccff);
+
+const camera = new THREE.PerspectiveCamera(60, ula.clientWidth / ula.clientHeight, 0.1, 1000);
+camera.position.set(8, 10, 15);
+const controls = new OrbitControls(camera, renderer.domElement);
+
+const ambiance = new THREE.AmbientLight(0x777777, 1);
+ambiance.position.set(5, 10, 7);
+scene.add(ambiance);
+
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(5, 10, 7);
+scene.add(light);
+scene.add(new THREE.GridHelper(20, 20, 0x4466aa, 0x223355));
+
+// --- THE TILES ENGINE (Zero-Loss Spatial Node) ---
+class SpatialNode {
+constructor(matrices = [], handedness = 1, axis = new THREE.Vector3(1,0,0)) {
+    this.matrices = matrices.length > 0 ? matrices : [new THREE.Matrix4()];
+    // INJECT DNA AT BIRTH
+    this.matrices.forEach(m => {
+        if (!m.los_id) m.los_id = new THREE.Vector3().setFromMatrixPosition(m);
+        // If it's a first-generation point, the ghost is itself (the origin of its own existence)
+        if (!m.ghost_id) m.ghost_id = m.los_id.clone();
+    });
+    this.handedness = handedness;
+    this.axis = axis.clone();
+    this.spin = new THREE.Euler(0, 0, 0);
+}
+
+add(otherNode, distributionExpr) {
+	if (distributionExpr) {
+        const entangledMatrices = this.matrices.flatMap((m, i) => {
+            return otherNode.matrices.map((om, j) => {
+                const transform = distributionExpr(m, om, i, j);
+                return transform.multiply(m).multiply(om);
+            });
+        });
+        return new SpatialNode(entangledMatrices);
+    }
+	
+    if (otherNode.handedness === -1) return this.subtract(otherNode);
+    const allMatrices = [...this.matrices, ...otherNode.matrices];
+    const seen = new Set();
+    const uniqueMatrices = [];
+    
+    allMatrices.forEach(m => {
+        const id = m.los_id;
+        const key = `${Math.round(id.x)},${Math.round(id.y)},${Math.round(id.z)}`;
+        if (!seen.has(key)) {
+            seen.add(key);
+            const nm = m.clone(); 
+            nm.los_id = id.clone();
+            // PRESERVE THE LINEAGE: Keep the ghost during the merge
+            if (m.ghost_id) nm.ghost_id = m.ghost_id.clone();
+            uniqueMatrices.push(nm);
+        }
+    });
+    return new SpatialNode(uniqueMatrices, this.handedness, otherNode.axis ? otherNode.axis.clone() : this.axis.clone());
+}
+
+subtract(otherNode) {
+    const occupied = new Set();
+    // COLLISION LOGIC: Still uses the physical los_id to find 'Occupied' space
+    otherNode.matrices.forEach(m => occupied.add(`${Math.round(m.los_id.x)},${Math.round(m.los_id.y)},${Math.round(m.los_id.z)}`));
+    
+    const newMatrices = [];
+    this.matrices.forEach(m => {
+        if (!occupied.has(`${Math.round(m.los_id.x)},${Math.round(m.los_id.y)},${Math.round(m.los_id.z)}`)) {
+            const nm = m.clone(); 
+            nm.los_id = m.los_id.clone();
+            // PRESERVE THE LINEAGE: Even in subtraction, survivors keep their ghosts
+            if (m.ghost_id) nm.ghost_id = m.ghost_id.clone();
+            newMatrices.push(nm);
+        }
+    });
+    return new SpatialNode(newMatrices, this.handedness, this.axis.clone());
+}
+
+multiply(n, stepExpr = null) {
+    let newMatrices = [];
+    const count = Math.abs(n);
+    const sign = Math.sign(n) || 1;
+    for (let i = 0; i < count; i++) {
+        const transform = new THREE.Matrix4();
+        let tx = this.axis.x * i * sign, ty = this.axis.y * i * sign, tz = this.axis.z * i * sign, s = 1.0;
+        if (stepExpr) {
+            tx = stepExpr.x !== undefined ? stepExpr.x(i) * sign : tx;
+            ty = stepExpr.y !== undefined ? stepExpr.y(i) * sign : ty;
+            tz = stepExpr.z !== undefined ? stepExpr.z(i) * sign : tz;
+            s = stepExpr.s !== undefined ? stepExpr.s(i) : 1.0;
+        }
+        const move = new THREE.Matrix4().makeTranslation(tx, ty, tz);
+        const scale = new THREE.Matrix4().makeScale(s, s, s);
+        if (this.spin) transform.multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(this.spin.x*i, this.spin.y*i, this.spin.z*i)));
+        transform.multiply(move).multiply(scale);
+        
+        this.matrices.forEach(m => {
+            const nm = transform.clone().multiply(m);
+            // GHOST: Inherit the parent's current identity before we move
+            nm.ghost_id = m.los_id ? m.los_id.clone() : new THREE.Vector3().setFromMatrixPosition(m);
+            // UNIQUE: Register the new physical coordinate
+            nm.los_id = new THREE.Vector3().setFromMatrixPosition(nm);
+            newMatrices.push(nm);
+        });
+    }
+    return new SpatialNode(newMatrices, this.handedness, this.axis.clone(), this.spin);
+}
+
+divide(n) {
+    // If n is a number, we perform a Sovereignty Partition
+    const newMatrices = this.matrices.map(m => {
+        const nm = m.clone();
+        // PHYSICAL GHOST: Shift the actual position by the divisor
+        const ghostPos = new THREE.Vector3().setFromMatrixPosition(m).divideScalar(n);
+        nm.makeTranslation(ghostPos.x, ghostPos.y, ghostPos.z);
+        
+        // ANCHOR: Preserve the original Integer Corpse in the ghost_id
+        nm.ghost_id = m.los_id ? m.los_id.clone() : new THREE.Vector3().setFromMatrixPosition(m);
+        nm.los_id = ghostPos; // The new "Drifting" identity
+        return nm;
+    });
+    return new SpatialNode(newMatrices, this.handedness, this.axis);
+}
+
+extrude(n) {
+    const size = Math.floor(Math.abs(n));
+    if (size <= 0) return new SpatialNode([], this.handedness, this.axis.clone());
+    
+    // 1. Determine the vector for the current extrusion
+    const sign = Math.sign(n) || 1;
+    const extrusionDir = this.axis.clone().multiplyScalar(sign);
+    
+    let matrices = [];
+    for (let i = 0; i < size; i++) {
+        // 2. Create the physical shift for this layer
+        const offset = extrusionDir.clone().multiplyScalar(i);
+        const translation = new THREE.Matrix4().makeTranslation(offset.x, offset.y, offset.z);
+        
+        for (let base of this.matrices) {
+            const nm = new THREE.Matrix4().multiplyMatrices(translation, base);
+            
+            // 3. Dual Identity Assignment
+            // GHOST: Parent identity (The slice being extruded)
+            nm.ghost_id = base.los_id ? base.los_id.clone() : new THREE.Vector3().setFromMatrixPosition(base);
+            
+            // UNIQUE: Child identity (The new physical manifestation)
+            nm.los_id = new THREE.Vector3().setFromMatrixPosition(nm);
+            
+            matrices.push(nm);
+        }
+    }
+
+    // 4. Cycle the axis for the NEXT potential operation in the AST chain
+    let nextAxis = this.axis.equals(new THREE.Vector3(1,0,0)) ? new THREE.Vector3(0,1,0) : 
+                  (this.axis.equals(new THREE.Vector3(0,1,0)) ? new THREE.Vector3(0,0,1) : 
+                   new THREE.Vector3(1,0,0));
+
+    return new SpatialNode(matrices, this.handedness, nextAxis, this.spin);
+}
+
+rotate(rx, ry, rz) {
+    const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, rz));
+    const newMatrices = this.matrices.map(m => {
+        const nm = rotationMatrix.clone().multiply(m);
+        // GHOST: Preserve the identity before the tilt
+        nm.ghost_id = m.los_id ? m.los_id.clone() : new THREE.Vector3().setFromMatrixPosition(m);
+        // UNIQUE: Register the new physical coordinate after rotation
+        nm.los_id = new THREE.Vector3().setFromMatrixPosition(nm);
+        return nm;
+    });
+    return new SpatialNode(newMatrices, this.handedness, this.axis.clone().applyMatrix4(rotationMatrix));
+}
+
+offset(x, y, z) {
+    const offsetMatrix = new THREE.Matrix4().makeTranslation(x, y, z);
+    const newMatrices = this.matrices.map(m => {
+        const nm = offsetMatrix.clone().multiply(m);
+        // GHOST: Preserve the pre-shift identity
+        nm.ghost_id = m.los_id ? m.los_id.clone() : new THREE.Vector3().setFromMatrixPosition(m);
+        // UNIQUE: Update to the new coordinate for collision logic
+        nm.los_id = new THREE.Vector3().setFromMatrixPosition(nm);
+        return nm;
+    });
+    return new SpatialNode(newMatrices, this.handedness, this.axis.clone());
+}
+
+snap(otherNode) {
+    // 1. Calculate the 'Tip' of the current identity
+    const lastM = this.matrices[this.matrices.length - 1];
+    const tip = new THREE.Vector3().setFromMatrixPosition(lastM);
+    
+    // 2. Create the shift matrix based on that tip
+    const move = new THREE.Matrix4().makeTranslation(tip.x, tip.y, tip.z);
+    
+    // 3. Transform the 'other' identity into the new placement
+    const adjusted = otherNode.matrices.map(m => {
+        const nm = move.clone().multiply(m);
+        // GHOST: Remember the original local DNA
+        nm.ghost_id = m.los_id ? m.los_id.clone() : new THREE.Vector3().setFromMatrixPosition(m);
+        // UNIQUE: Register the new position at the tip of the sequence
+        nm.los_id = new THREE.Vector3().setFromMatrixPosition(nm);
+        return nm;
+    });
+
+    // 4. RETURN a new SpatialNode
+    return new SpatialNode([...this.matrices, ...adjusted], this.handedness, otherNode.axis.clone());
+}
+
+reify() {
+    const revivedMatrices = this.matrices.map(m => {
+        // 1. Keep the visual "Soul" (Rotation/Scale)
+        const nm = m.clone(); 
+        
+        // 2. Find the integer "Corpse" (The Anchor)
+        const anchor = m.ghost_id || m.los_id; 
+        
+        // 3. SURGICAL PATCH: 
+        // We replace only the position (elements 12, 13, 14 in a 4x4 matrix)
+        nm.setPosition(anchor.x, anchor.y, anchor.z);
+        
+        // 4. Sync the IDs
+        nm.los_id = anchor.clone();
+        nm.ghost_id = anchor.clone(); 
+        
+        return nm;
+    });
+    return new SpatialNode(revivedMatrices, this.handedness, this.axis.clone());
+}
+
+serializeToHex() {
+    return this.matrices.map(m => {
+        // Use ghost_id to get the 'Corpse' back from the 'Ghost'
+        const anchor = m.ghost_id || m.los_id;
+        
+        // Ensure we round to the nearest integer and clamp to 0-255
+        const r = (val) => Math.max(0, Math.min(255, Math.round(val)))
+            .toString(16)
+            .padStart(2, '0');
+
+        return `${r(anchor.x)}${r(anchor.y)}${r(anchor.z)}`;
+    }).join('').toUpperCase();
+}
+
+}
+
+class AgencyPoint {
+    constructor(startPos = new THREE.Vector3(0, 0, 0)) {
+        this.position = startPos.clone();
+        this.memory = [new THREE.Matrix4().setPosition(this.position)];
+    }
+
+    // Tell the agent to walk in a direction and drop points
+walk(direction, steps) {
+    const dir = direction.toLowerCase();
+    const vec = new THREE.Vector3(
+        dir === 'x' ? 1 : 0,
+        dir === 'y' ? 1 : 0,
+        dir === 'z' ? 1 : 0
+    );
+    for (let i = 0; i < steps; i++) {
+        this.position.add(vec);
+        this.memory.push(new THREE.Matrix4().setPosition(this.position.clone()));
+    }
+    return this;
+}
+
+    // Converts the agent's memory into a standard SpatialNode for rendering
+    compile() {
+        const node = new SpatialNode([...this.memory], 1, new THREE.Vector3(0, 1, 0));
+        node.isAgencyPath = true; // Flag for the renderer
+        return node;
+    }
+}
+
+// --- ALGEBRAIC MEMORY & AST PARSER ---
+const KERNEL = { memory: {}, meshes: [] };
+let tempCounter = 0; // Used for abstract syntax tree temp variables
+
+KERNEL.functions = {
+    spiral: (node) => {
+        const spiraledMatrices = node.matrices.map((m, i) => {
+            const rot = new THREE.Matrix4().makeRotationY(i * 0.5);
+            const lift = new THREE.Matrix4().makeTranslation(0, i * 0.2, 0);
+            return rot.multiply(lift).multiply(m);
+        });
+        return new SpatialNode(spiraledMatrices, node.handedness, node.axis);
+    }
+};
+
+KERNEL.mapData = function(dataArray, mappingConfig) {
+    // Example mappingConfig: { x: 'id', y: 'value', z: 'categoryIndex' }
+    const matrices = dataArray.map(item => {
+        const x = item[mappingConfig.x] || 0;
+        const y = item[mappingConfig.y] || 0;
+        const z = item[mappingConfig.z] || 0;
+        return new THREE.Matrix4().makeTranslation(x, y, z);
+    });
+    return new SpatialNode(matrices);
+};
+
+// New Hex-to-Spatial Translation Logic
+KERNEL.resurrectFromHex = function(hexString) {
+    const cleanHex = hexString.replace(/^0x/, ''); // Remove prefix
+    const bytes = cleanHex.match(/.{1,2}/g) || [];
+    const matrices = [];
+    
+    // Step by 3 to fill X, Y, Z
+    for (let i = 0; i < bytes.length; i += 3) {
+        // Only create a point if we actually have bytes left
+        const x = parseInt(bytes[i], 16);
+        const y = parseInt(bytes[i+1], 16);
+        const z = parseInt(bytes[i+2], 16);
+        
+        // If Y or Z are missing (short string), they become 0
+        const m = new THREE.Matrix4().makeTranslation(x, isNaN(y) ? 0 : y, isNaN(z) ? 0 : z);
+        m.los_id = new THREE.Vector3(x, isNaN(y) ? 0 : y, isNaN(z) ? 0 : z);
+        m.ghost_id = m.los_id.clone();
+        matrices.push(m);
+    }
+    return new SpatialNode(matrices);
+};
+
+KERNEL.decodeNode = function(node) {
+    let result = "";
+    node.matrices.forEach(m => {
+        const anchor = m.ghost_id || m.los_id;
+        // Use a small array to iterate through X, Y, Z
+        [anchor.x, anchor.y, anchor.z].forEach(val => {
+            const code = Math.round(val);
+            // We allow standard ASCII range (including space 32 and control 10)
+            if (code > 0 && code < 256) {
+                result += String.fromCharCode(code);
+            }
+        });
+    });
+    return result;
+};
+
+KERNEL.mapToSpace = function(value, baseExponent) {
+    // base-10 ^ baseExponent
+    const resolution = Math.pow(10, baseExponent);
+    
+    // This allows us to map a float coordinate to a specific 
+    // integer index in a massive symbolic array
+    return Math.floor(value * resolution) % 256; 
+};
+
+KERNEL.relativityWarp = function(matrix) {
+    const pos = new THREE.Vector3().setFromMatrixPosition(matrix);
+    const distance = pos.length(); // Radial distance from origin
+    
+    // We treat the "Limit" of our ULA as 'c' (Speed of light)
+    const limit = 100; 
+    const velocityRatio = Math.min(distance / limit, 0.99); // Prevent division by zero
+    
+    // Lorentz Factor: Determines how much the "Number" contracts/dilates
+    return 1 / Math.sqrt(1 - Math.pow(velocityRatio, 2));
+};
+
+KERNEL.resolveStation = function(node) {
+    let result = "";
+    node.matrices.forEach(m => {
+        const anchor = m.ghost_id || m.los_id;
+        const warp = this.relativityWarp(m); // The relativistic shift
+        
+        [anchor.x, anchor.y, anchor.z].forEach(val => {
+            // The number is 'pushed' by the warp factor before mapping
+            const relativeValue = val * warp; 
+            const code = this.mapToSpace(relativeValue, 1); // Using your base-10^1 mapping
+            
+            if (code > 0 && code < 256) {
+                result += String.fromCharCode(code);
+            }
+        });
+    });
+    return result;
+};
+
+function resetKernel() {
+    // Initialize standard foundational variables
+    KERNEL.memory = {
+        'o': new SpatialNode([new THREE.Matrix4()], 1, new THREE.Vector3(0, 0, 0)), // Pure origin point
+		'-o': new SpatialNode([new THREE.Matrix4()], -1, new THREE.Vector3(0, 0, 0)),
+        'x': new SpatialNode([new THREE.Matrix4()], 1, new THREE.Vector3(1, 0, 0)),
+        'y': new SpatialNode([new THREE.Matrix4()], 1, new THREE.Vector3(0, 1, 0)),
+        'z': new SpatialNode([new THREE.Matrix4()], 1, new THREE.Vector3(0, 0, 1)),
+        '-x': new SpatialNode([new THREE.Matrix4()], 1, new THREE.Vector3(-1, 0, 0)),
+        '-y': new SpatialNode([new THREE.Matrix4()], 1, new THREE.Vector3(0, -1, 0)),
+        '-z': new SpatialNode([new THREE.Matrix4()], 1, new THREE.Vector3(0, 0, -1)),
+		'vx': new SpatialNode([new THREE.Matrix4()], -1, new THREE.Vector3(1, 0, 0)),
+        'vy': new SpatialNode([new THREE.Matrix4()], -1, new THREE.Vector3(0, 1, 0)),
+        'vz': new SpatialNode([new THREE.Matrix4()], -1, new THREE.Vector3(0, 0, 1)),
+        '-vx': new SpatialNode([new THREE.Matrix4()], -1, new THREE.Vector3(-1, 0, 0)),
+        '-vy': new SpatialNode([new THREE.Matrix4()], -1, new THREE.Vector3(0, -1, 0)),
+        '-vz': new SpatialNode([new THREE.Matrix4()], -1, new THREE.Vector3(0, 0, -1))
+    };
+    tempCounter = 0;
+    KERNEL.meshes.forEach(m => scene.remove(m));
+    KERNEL.meshes = [];
+    document.getElementById('memoryState').innerHTML = "";
+    logMemory("[SYS] Kernel reset. o, x, y, z telemetry established.");
+}
+
+// The core sequential compiler
+function compileNotebook() {
+    resetKernel();
+    const cells = document.querySelectorAll('.cell textarea');
+    
+    cells.forEach((cell, cellIndex) => {
+        const lines = cell.value.split('\n');
+        lines.forEach(line => {
+            line = line.trim();
+            if (!line || line.startsWith('//')) return;
+
+            try {
+if (line.startsWith('fn ')) {
+    // Regex captures: name, parameter, and the braced body
+    const fnMatch = line.match(/fn\s+(\w+)\s*\(([^)]+)\)\s*=\s*\{([^}]+)\}/);
+    if (fnMatch) {
+        const funcName = fnMatch[1];
+        const paramName = fnMatch[2].trim();
+        const innerAlgebra = fnMatch[3].trim();
+        
+        KERNEL.functions[funcName] = (paramValueNode) => {
+            // 1. Create a local "Scope" memory
+            const localMemory = { ...KERNEL.memory };
+            // 2. Map the parameter name to the passed value
+            localMemory[paramName] = paramValueNode;
+            
+            // 3. Solve the algebra using this localized memory
+            return solveScopedAlgebra(innerAlgebra, localMemory);
+        };
+        logMemory(`[FN] Parameterized Identity <strong>${funcName}(${paramName})</strong> saved.`);
+    }
+} else if (line.startsWith('render ')) {
+    const target = line.split(' ')[1];
+    const node = KERNEL.memory[target];
+    if (node) {
+        renderToULA(node);
+        // NEW: If it came from Hex, show the recovered string!
+        const hexDump = node.serializeToHex();
+		const humanText = KERNEL.decodeNode(node);
+		
+		const markupSafe = humanText
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/\n/g, "↵");
+		
+        logMemory(`[HEX RECOVERY] ${target}: 0x${hexDump}`);
+		logMemory(`[HUMAN READABLE] ${target}: "${markupSafe}"`);
+    }
+}
+else if (line.startsWith('spatialize ')) {
+    const targetName = line.split(' ')[1];
+    const rawText = document.getElementById('scribe-editor').value;
+    
+    // Convert text to Hex, then to Node
+    let hex = "";
+    for (let i = 0; i < rawText.length; i++) {
+        hex += rawText.charCodeAt(i).toString(16).padStart(2, '0');
+    }
+    
+    const node = KERNEL.resurrectFromHex(hex);
+    
+    // Tag the node for the renderer
+    node.layerType = 'DATA_CODE'; 
+    KERNEL.memory[targetName] = node;
+    
+    logMemory(`[SCRIBE] Spatialized ${rawText.length} characters into ${node.matrices.length} cyan blocks.`);
+}
+ else if (line.includes('=')) {
+	const [variable, expression] = line.split('=').map(s => s.trim());
+    const result = parseAST(expression);
+    KERNEL.memory[variable] = result;
+
+    // FIX: Check if it's a Node or a Number before logging
+    const count = (result instanceof SpatialNode) ? 
+                  `${result.matrices.length} points` : 
+                  `value: ${result}`;
+                  
+    logMemory(`[MEM] <strong>${variable}</strong> saved (${count}).`);
+                } else if (line.includes('->')) {
+    const [agentName, commands] = line.split('->').map(s => s.trim());
+    const agent = KERNEL.memory[agentName];
+    
+    if (agent instanceof AgencyPoint) {
+        // Parse commands like "5x 5y 5z"
+        const steps = commands.match(/(-?\d+[xyz])/g);
+        steps.forEach(s => {
+            const val = parseInt(s);
+            const axis = s.slice(-1);
+            const vec = new THREE.Vector3(
+                axis === 'x' ? val : 0,
+                axis === 'y' ? val : 0,
+                axis === 'z' ? val : 0
+            );
+            agent.walk(vec.normalize(), Math.abs(val));
+        });
+        logMemory(`[AGENT] <strong>${agentName}</strong> moved: ${commands}`);
+    }
+}
+            } catch (err) {
+                logMemory(`<span class="error">[ERR] Cell ${cellIndex + 1}: ${err.message}</span>`);
+            }
+        });
+    });
+}
+
+// Recursive Descent Parser for Parentheses
+function parseAST(expr) {
+    expr = expr.trim();
+    
+    // 1. Convert implicit scalar multiplication (PROTECTING HEX STRINGS)
+    expr = expr.replace(/(0x[0-9a-fA-F]+)|(\d+(?:\.\d+)?)\s*([a-zA-Z_]|\()/g, (match, hex, num, char) => {
+        if (hex) return hex; // IMMUNITY: If it's a hex string, leave it completely alone!
+        return `${num} * ${char}`; // Otherwise, insert the '*' for algebra
+    });
+    
+    // 2. Convert implicit parenthesis multiplication: "(x)(y)" -> "(x) * (y)"
+    expr = expr.replace(/\)\s*\(/g, ') * (');
+
+    // Resolve innermost parentheses first
+    while (expr.includes('(')) {
+expr = expr.replace(/(?<!\w)\(([^\(\)]+)\)/g, (match, innerExpr) => {
+    const tempVar = `__ast_${tempCounter++}`;
+    KERNEL.memory[tempVar] = evaluateFlatExpression(innerExpr);
+    return tempVar; 
+});
+    }
+    
+    return evaluateFlatExpression(expr);
+}
+
+function evaluateFlatExpression(expr) {
+    const tokens = expr.match(/(?:\w+\([^)]+\)|0x[0-9a-fA-F]+|\[[^\]]*\]|\{|\}|-?[A-Za-z_]\w*|-?\d+(?:\.\d+)?|[+*\/\-^@&=?<>.])/g);
+    if (!tokens || tokens.length === 0) return null;
+
+let stream = tokens.map(t => {
+    // 1. FUNCTION INVOCATION HANDLER
+    if (typeof t === 'string' && t.includes('(') && !t.startsWith('[') && !t.endsWith('.compile()')) {
+        const parts = t.split(/[()]/);
+        const fnName = parts[0];
+        const argRaw = parts[1];
+        
+        if (KERNEL.functions[fnName]) {
+            // Check if argument is a number or a variable from memory
+            const argVal = KERNEL.memory[argRaw] !== undefined ? 
+                           KERNEL.memory[argRaw] : parseFloat(argRaw);
+            
+            // Create a temporary Seed Node to pass into the function
+            const seed = (typeof argVal === 'number') ? 
+                new SpatialNode([new THREE.Matrix4().makeTranslation(argVal, 0, 0)]) : argVal;
+            
+            return KERNEL.functions[fnName](seed); 
+        }
+    }
+
+    // 2. HEX / ARRAY / MEMORY (Your existing logic)
+    if (typeof t === 'string' && t.startsWith('0x')) return KERNEL.resurrectFromHex(t); 
+    if (typeof t === 'string' && t.startsWith('[') && t.endsWith(']')) {
+        return t.slice(1, -1).split(',').map(n => {
+            const trimmed = n.trim();
+            return KERNEL.memory[trimmed] !== undefined ? KERNEL.memory[trimmed] : parseFloat(trimmed);
+        });
+    }
+    if (typeof t === 'string' && t.endsWith('.compile()')) {
+        const baseName = t.replace('.compile()', '');
+        const agent = KERNEL.memory[baseName];
+        if (agent instanceof AgencyPoint) return agent.compile();
+    }
+    if (!isNaN(parseFloat(t)) && isFinite(t)) return parseFloat(t);
+    if (t === 'AgencyPoint') return new AgencyPoint();
+    if (KERNEL.memory[t] !== undefined) return KERNEL.memory[t];
+    return t;
+});
+
+    const processOp = (operators) => {
+        for (let i = 0; i < stream.length; i++) {
+            const op = stream[i];
+            if (operators.includes(op)) {
+                let left = stream[i - 1];
+                let right = stream[i + 1];
+                let result = null;
+
+                // --- EXPONENT / EXTRUDE (^)
+                if (op === '^') {
+                    if (typeof left === "number" && typeof right === "number") {
+                        result = Math.pow(left, right);
+                    } else {
+                        if (right > 0) result = left.extrude(right);
+                        else {
+                            const s = Math.pow(0.5, Math.abs(right));
+                            const scaleMat = new THREE.Matrix4().makeScale(s, s, s);
+                            const scaledMatrices = left.matrices.map(m => scaleMat.clone().multiply(m));
+                            result = new SpatialNode(scaledMatrices, left.handedness, left.axis);
+                        }
+                    }
+                } else if (op === '@') {
+                    if (!(left instanceof SpatialNode)) throw new Error("@ requires a Node on the left");
+                    if (typeof right === 'number') {
+                        // READ DNA FOR SLICING
+                        const filtered = [];
+                        left.matrices.forEach(m => {
+                            const id = m.los_id;
+                            if ((left.axis.x === 1 && Math.abs(id.x - right) < 0.1) ||
+                                (left.axis.y === 1 && Math.abs(id.y - right) < 0.1) ||
+                                (left.axis.z === 1 && Math.abs(id.z - right) < 0.1)) {
+                                const nm = m.clone(); nm.los_id = id.clone();
+                                filtered.push(nm);
+                            }
+                        });
+                        result = new SpatialNode(filtered, left.handedness, left.axis.clone());
+                    } else if (Array.isArray(right) && right.length === 3) {
+                        result = left.rotate(right[0] * (Math.PI / 180), right[1] * (Math.PI / 180), right[2] * (Math.PI / 180));
+                    } else {
+                        let newNode = new SpatialNode([...left.matrices], left.handedness, left.axis.clone());
+                        if (typeof right === 'string') {
+                            const spinMatch = right.match(/^([xyz])(\d+)$/);
+                            if (spinMatch) {
+                                newNode.spin = { x: 0, y: 0, z: 0 };
+                                newNode.spin[spinMatch[1]] = parseFloat(spinMatch[2]) * (Math.PI / 180);
+                            } else if (['x','y','z'].includes(right)) {
+                                newNode.axis = (right === 'x') ? new THREE.Vector3(1,0,0) : ((right === 'y') ? new THREE.Vector3(0,1,0) : new THREE.Vector3(0,0,1));
+                            }
+                        } else if (right instanceof SpatialNode) {
+                            newNode.axis = right.axis.clone();
+                        }
+                        result = newNode;
+                    }
+                }
+else if (op === '!') {
+    // 'left' is the node to reify. There is no 'right'.
+    if (left instanceof SpatialNode) {
+        result = left.reify();
+        stream.splice(i - 1, 2, result); // Remove 2 tokens: [node, !]
+        i--;
+		continue;
+    }
+}
+                // --- MULTIPLY (*)
+                else if (op === '*') {
+                    // SOVEREIGNTY GUARD
+                    const scalar = typeof left === 'number' ? left : right;
+                    const node = left instanceof SpatialNode ? left : (right instanceof SpatialNode ? right : null);
+                    
+                    if (node) {
+                        result = node.multiply(scalar);
+                    } else if (typeof left === 'number' && typeof right === 'number') {
+                        result = left * right;
+                    } else {
+                        throw new Error(`Cannot multiply ${typeof left} and ${typeof right}`);
+                    }
+                }
+                // --- ADDITION (+)
+                else if (op === '+') {
+                    if (typeof left === 'number' && typeof right === 'number') result = left + right;
+                    else if (left instanceof SpatialNode) {
+                        // FIX: Check if 'right' is an Array, because the stream already parsed it!
+                        if (Array.isArray(right)) {
+                            result = left.offset(right[0]||0, right[1]||0, right[2]||0);
+                        } else result = left.add(right);
+                    }
+                }
+                // --- SUBTRACTION (-)
+                else if (op === '-') {
+                    if (typeof left === 'number' && typeof right === 'number') result = left - right;
+                    else result = left.subtract(right);
+                }
+                // --- SNAP (&)
+                else if (op === '&') result = left.snap(right);
+                // --- DIVIDE (/)
+                else if (op === '/') {
+                    // Check if we are doing LOS math or Scalar math
+                    if (left instanceof SpatialNode && typeof right === 'number') {
+                        result = left.divide(right);
+                    } else if (typeof left === 'number' && typeof right === 'number') {
+                        result = left / right;
+                    } else {
+                        throw new Error(`Invalid Division: ${typeof left} / ${typeof right}`);
+                    }
+                    stream.splice(i - 1, 3, result);
+                    i--;
+                }
+                // --- PATH FILTERING (?)
+                else if (op === '?') {
+                    const tx = Math.round(right[0] || 0), ty = Math.round(right[1] || 0), tz = Math.round(right[2] || 0);
+                    const filtered = [];
+                    left.matrices.forEach(m => {
+                        const id = m.los_id; // READ DNA!
+                        const px = Math.round(id.x), py = Math.round(id.y), pz = Math.round(id.z);
+                        if ((py===0 && pz===0 && px>=0 && px<=tx) ||
+                            (px===tx && pz===0 && py>=0 && py<=ty) ||
+                            (px===tx && py===ty && pz>=0 && pz<=tz)) {
+                            const nm = m.clone(); nm.los_id = id.clone();
+                            filtered.push(nm);
+                        }
+                    });
+                    result = new SpatialNode(filtered, left.handedness, left.axis.clone());
+                }
+                // --- DOT / CROSS (.)
+                else if (op === '.') {
+                    if (typeof right === 'string' && left instanceof SpatialNode) {
+                        if (right.startsWith('dot(')) {
+                            const varName = right.slice(4, -1);
+                            const other = KERNEL.memory[varName];
+                            if (!(other instanceof SpatialNode)) throw new Error("dot() requires a SpatialNode");
+                            result = left.dot(other);
+                        } else if (right.startsWith('cross(')) {
+                            const varName = right.slice(6, -1);
+                            const other = KERNEL.memory[varName];
+                            if (!(other instanceof SpatialNode)) throw new Error("cross() requires a SpatialNode");
+                            result = left.cross(other);
+                        }
+                    }
+                }
+
+                if (op !== '!') {
+					stream.splice(i - 1, 3, result);
+					i--;
+				}
+            }
+        }
+    };
+
+    processOp(['^','@', '!']);
+    processOp(['*','/']);
+    processOp(['+','-','&']);
+    processOp(['?']);
+    processOp(['.']); // DOT/CROSS must be last to avoid conflicts
+
+    return stream[0];
+}
+
+// --- LOS STANDARD BLUEPRINT LIBRARY ---
+const BLUEPRINTS = {
+	riemann_zeta_manifold: [
+    "// 1. Define the Critical Line (The 1/2 Re-Axis)",
+    "critical_line = (y * 20) + [0.5, 0, 0]",
+    "// 2. Define a Prime frequency (e.g., 2, 3, 5)",
+    "prime_wave = (o + [2, 0, 0]) @ y15",
+    "// 3. Create the 'Ghost' shell around the line",
+    "manifold = 24(prime_wave + [0.5, 0, 0])",
+    "render critical_line",
+    "render manifold"
+],
+	three_dim_axis: [
+		"floor = ((x * 5) + (z * 5))",
+		"pillar = (y * 4)\nstructure = floor + pillar",
+		"render structure"
+	],
+    square_hollow: [
+        "side = 10x",
+        "sq = side & (side @ [0, 90, 0]) & (side @ [0, 180, 0]) & (side @ [0, 270, 0])",
+        "render sq"
+    ],
+    triangle_equilateral: [
+        "base = 10x",
+        "tri = base & (base @ [0, 0, 120]) & (base @ [0, 0, 240])",
+        "render tri"
+    ],
+    circle_ring: [
+        "// 1. Move pure origin point to radius\nrim = o + [5, 0, 0]",
+        "// 2. Assign 10 degree spin around Y axis\nring_logic = rim @ y10",
+        "// 3. Multiply to close 360 loop (orbits without marching)\ncircle = 36(ring_logic)",
+        "render circle"
+    ],
+	filled_plane: [
+        "row = 10x",
+        "plane = 10(row @ z)",
+        "render plane"
+    ],
+	solid_cube: [
+        "size = 8",
+        "row = size * x",
+        "slab = size * (row @ z)",
+        "cube = size * (slab @ y)",
+        "render cube"
+    ],
+thick_wall: [
+    "// 1. Create 10x10 Face",
+    "face = 10 * ((10 * x) @ y)",
+    "// 2. Define 3x3 Window and move it",
+    "win = 3 * ((3 * x) @ y) + [3, 3, 0]",
+    "// 3. Cut the hole",
+    "hollow = face - win",
+    "// 4. PIVOT to Z and Extrude for thickness",
+    "final = (hollow @ z) ^ 3",
+    "render final"
+],
+    torus_geometry: [
+        "// 1. Create a small vertical ring (The 'Pipe' thickness)\nbrush_rim = (o + [1,0,0]) @ z15",
+        "brush = 24(brush_rim)",
+        "// 2. Move that brush out to the main radius\ntorus_path = (brush + [5,0,0]) @ y15",
+        "// 3. Spin the brush around the origin\nfinal_torus = 24(torus_path)",
+        "render final_torus"
+    ],
+tree_trunk: [
+    "// 1. Start from the Origin (o)",
+	"// 2. Multiply 40 times, moving up 0.5 each step, tapering scale",
+	"trunk = 40 * o * [0, i * 0.5, 0, (1 - i/40)]",
+	"render trunk"
+],
+    colonnade: [
+        "// Define volumetric pillar\nbase = x + (x + [0,0,1])\npillar = 5(base + y)",
+        "// Define long roof\nroof = (12x + z) + [0, 5, 0]",
+        "// Assemble with Snap\narch = pillar + (pillar + [10, 0, 0]) + roof\nfinal = arch & arch & arch",
+        "render final"
+    ],
+    staircase: [
+        "// Define one step\nstep = 3x + 0.5y",
+        "// Multiply with offset\nstairs = 10(step + [1, 1, 0])",
+        "render stairs"
+    ],
+    leaning_tower: [
+        "// Define base\nbase = 4x + 4z",
+        "// Tilt the vertical axis 10 degrees, then scale height\ntower = 15(base + (y @ [0,0,10]))",
+        "render tower"
+    ],
+    spiral_stair: [
+        "step = 3x + 0.2y + z",
+        "// Spin 15 degrees and lift 0.5 per step\nstep_logic = (step @ y15) + [0, 0.5, 0]",
+        "staircase = 24(step_logic)",
+        "render staircase"
+    ]
+};
+
+// --- BLUEPRINT INJECTOR ---
+document.getElementById('blueprint-select').addEventListener('change', (e) => {
+    const blueprintKey = e.target.value;
+    if (!blueprintKey || !BLUEPRINTS[blueprintKey]) return;
+
+    const blueprintData = BLUEPRINTS[blueprintKey];
+    const container = document.getElementById('cells-container');
+    
+    // Clear existing cells
+    container.innerHTML = '';
+
+    // Generate new cells based on the blueprint array
+    blueprintData.forEach((cellText, index) => {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.innerHTML = `
+            <div class="cell-header">Cell ${index + 1}</div>
+            <textarea spellcheck="false">${cellText}</textarea>
+        `;
+        container.appendChild(cell);
+    });
+
+    // Re-attach the typing listeners so the user can edit the loaded blueprint
+    attachCellListeners();
+    
+    // Run the compiler immediately to show the 3D result
+    compileNotebook();
+    
+    // Reset dropdown visually
+    e.target.value = ""; 
+    logMemory(`[SYS] Loaded Blueprint: <strong>${blueprintKey.toUpperCase()}</strong>`);
+});
+
+function populateBlueprintDropdown() {
+    const select = document.getElementById('blueprint-select');
+    
+    // Clear existing options except the first one
+    select.innerHTML = '<option value="">Load Blueprint...</option>';
+
+    // Loop through the BLUEPRINTS keys
+    Object.keys(BLUEPRINTS).forEach(key => {
+        const option = document.createElement('option');
+        option.value = key;
+        
+        // Format the text: 'circle_ring' becomes 'Circle Ring'
+        option.textContent = key.split('_')
+                                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                .join(' ');
+        
+        select.appendChild(option);
+    });
+}
+
+// Call it once on startup
+populateBlueprintDropdown();
+
+// --- RENDER LOGIC ---
+/* function renderToULA(spatialNode) {
+    const count = spatialNode.matrices.length;
+    const geo = new THREE.BoxGeometry(1, 1, 1); 
+    const mat = new THREE.MeshStandardMaterial({ 
+        color: spatialNode.handedness === -1 ? 0xff4455 : 0x77ddaa 
+    });
+
+    const instancedMesh = new THREE.InstancedMesh(geo, mat, count);
+    
+    spatialNode.matrices.forEach((matrix, i) => {
+        instancedMesh.setMatrixAt(i, matrix);
+		const baseColor = new THREE.Color();
+		if (spatialNode.layerType === 'DATA_CODE') {
+			baseColor.setHex(0x00ffff); // Cyan
+		} else {
+			baseColor.setHex(spatialNode.isValid ? 0x00ff00 : 0xff0000); // Green or Red
+		}
+    
+    // Apply to InstancedMesh
+    instancedMesh.setColorAt(i, baseColor);
+    });
+
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    scene.add(instancedMesh);
+    KERNEL.meshes.push(instancedMesh);
+} */
+
+function renderToULA(spatialNode) {
+    if (!spatialNode || !spatialNode.matrices) return;
+
+    const count = spatialNode.matrices.length;
+    // Use a box that is slightly smaller (0.95) to see the grid lines
+    const geo = new THREE.BoxGeometry(0.5, 0.5, 0.5); 
+    const mat = new THREE.MeshStandardMaterial({ 
+        color: spatialNode.handedness === -1 ? 0xff4455 : 0x77ddaa,
+        metalness: 0.1,
+        roughness: 0.8
+    });
+
+    const instancedMesh = new THREE.InstancedMesh(geo, mat, count);
+    
+    spatialNode.matrices.forEach((matrix, i) => {
+        instancedMesh.setMatrixAt(i, matrix);
+    });
+
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    scene.add(instancedMesh);
+    KERNEL.meshes.push(instancedMesh);
+}
+
+function logMemory(text) {
+    document.getElementById('memoryState').innerHTML += `<div>${text}</div>`;
+    const memPanel = document.getElementById('memory-panel');
+    memPanel.scrollTop = memPanel.scrollHeight;
+}
+
+// --- NOTEBOOK UI EVENTS ---
+function attachCellListeners() {
+    document.querySelectorAll('.cell textarea').forEach(textarea => {
+        // Remove old to prevent duplicates
+        textarea.removeEventListener('input', compileNotebook);
+        textarea.addEventListener('input', compileNotebook);
+    });
+}
+
+document.getElementById('addCellBtn').addEventListener('click', () => {
+    const container = document.getElementById('cells-container');
+    const cellCount = container.children.length + 1;
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.innerHTML = `
+        <div class="cell-header">Cell ${cellCount}</div>
+        <textarea spellcheck="false"></textarea>
+    `;
+    container.appendChild(cell);
+    attachCellListeners();
+});
+
+// --- RAYCASTER & INTERACTION ---
+function inspectBlock(id, node, activeMap) {
+    const matrix = node.matrices[id];
+    const yCoord = matrix.elements[13];
+    
+    // Apply the Base-N logic on the fly
+    const mappedValue = KERNEL.mapToSpace(yCoord, activeMap.exponent);
+    const output = activeMap.transform(mappedValue);
+
+    document.getElementById('sidebar').innerHTML = `
+        <div style="color: #ffcc00;">BASE_RESOLUTION: 10^${activeMap.exponent}</div>
+        <div style="font-family: monospace; background: #000; padding: 10px;">
+            ${output}
+        </div>
+    `;
+}
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let currentTool = 'select'; // can be 'select', 'paint', or 'erase'
+
+// Invisible plane to catch mouse clicks at y=0
+const gridPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(100, 100),
+    new THREE.MeshBasicMaterial({ visible: false })
+);
+gridPlane.rotation.x = -Math.PI / 2;
+scene.add(gridPlane);
+
+// The ULA Click Listener
+ula.addEventListener('pointerdown', (event) => {
+    if (currentTool === 'select') return;
+
+    // Calculate mouse position in normalized device coordinates (-1 to +1)
+    const rect = ula.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // See where the user clicked on the grid
+    const intersects = raycaster.intersectObject(gridPlane);
+    
+    if (intersects.length > 0) {
+        const point = intersects[0].point;
+        
+        // Snap to the nearest whole number (your Base-10 Digits)
+        const snapX = Number(point.x.toFixed(2)); // Support 2 decimal precision
+        const snapY = Math.round(point.y); // Usually 0 on the ground plane
+        const snapZ = Math.round(point.z);
+
+        // --- BIDIRECTIONAL TRANSLATION ---
+        //!const activeCell = document.querySelector('.cell textarea'); // Grabs the first cell for now
+        
+        // let operation = currentTool === 'paint' ? '+' : '-';
+        // let newAlgebra = `\n// Auto-painted coordinate\npainted_struct = painted_struct ${operation} (x + [${snapX}, ${snapY}, ${snapZ}])`;
+        
+        // Inject the text and re-evaluate!
+        // activeCell.value += newAlgebra;
+        // compileNotebook(); 
+    }
+});
+
+// Init
+attachCellListeners();
+compileNotebook();
+
+// Render Loop
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = ula.clientWidth / ula.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(ula.clientWidth, ula.clientHeight);
+});
+</script>
+</body>
+</html>
