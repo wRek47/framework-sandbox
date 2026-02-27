@@ -73,7 +73,33 @@
 			
             <div class="cell">
                 <div class="cell-header">Cell 4 [GPU Algebra]</div>
-                <textarea spellcheck="false"></textarea>
+                <textarea spellcheck="false">
+core = x ^ 10 ^ 10 ^ 10
+
+// Build the cutout exactly like the wall's window
+cutout_face = 3 * ((3 * x) @ y)
+cutout_vol = (cutout_face @ z) ^ 3
+cutout = cutout_vol + [3, 3, 0]
+
+void_test = core - cutout
+// 1. Take the survivors (973 points)
+// 2. Partition them by 2.5
+fractal_void = void_test / 2.5
+
+// Test: Can a fractional identity attach to an integer identity?
+hybrid = fractal_void & (10 * x)
+// If this returns 10, the kernel is a god.
+// It means the integer line perfectly subtracted the integer line,
+// while the fractional cube perfectly subtracted the fractional cube.
+stress_test = hybrid - (hybrid + [1, 0, 0])
+
+// Cell 6: The Resurrection Proof
+seed = stress_test @ 0
+corpse = seed!
+resurrection = corpse ^ 10 ^ 10 ^ 10
+
+render resurrection
+</textarea>
             </div>
 			
 			<div class="cell">
